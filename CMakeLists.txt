@@ -6,12 +6,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 qt_standard_project_setup()
+enable_testing()
 
-qt_add_executable(photo-salon
-    src/main.cpp
+add_library(photo-salon-lib STATIC
     src/MainWindow.cpp
     src/ImageViewer.cpp
 )
+target_include_directories(photo-salon-lib PUBLIC src)
+target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets)
 
-target_include_directories(photo-salon PRIVATE src)
-target_link_libraries(photo-salon PRIVATE Qt6::Widgets)
+qt_add_executable(photo-salon src/main.cpp)
+target_link_libraries(photo-salon PRIVATE photo-salon-lib)
+
+add_subdirectory(tests)
