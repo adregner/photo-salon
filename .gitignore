@@ -2,3 +2,6 @@ build/
 *.user
 .DS_Store
 Thumbs.db
+.vscode/
+.qtcreator/
+CMakeUserPresets.json
