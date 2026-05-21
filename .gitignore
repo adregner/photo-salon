@@ -1,4 +1,6 @@
 build/
+.worktrees/
+.superpowers/
 *.user
 .DS_Store
 Thumbs.db
