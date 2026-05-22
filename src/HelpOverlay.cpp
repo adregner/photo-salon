@@ -7,7 +7,6 @@ HelpOverlay::HelpOverlay(QWidget *parent)
 {
     setFocusPolicy(Qt::NoFocus);
     setAttribute(Qt::WA_TransparentForMouseEvents);
-    hide();
 }
 
 void HelpOverlay::paintEvent(QPaintEvent *) {
