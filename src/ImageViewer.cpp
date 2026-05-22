@@ -7,6 +7,7 @@
 #include <QKeyEvent>
 #include <QPixmap>
 #include <QPainter>
+#include <cmath>
 
 ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     : QGraphicsView(parent)
@@ -31,6 +32,14 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     }
 }
 
+bool ImageViewer::event(QEvent *event) {
+    if (event->type() == QEvent::Wheel) {
+        wheelEvent(static_cast<QWheelEvent*>(event));
+        return true;
+    }
+    return QGraphicsView::event(event);
+}
+
 void ImageViewer::showEvent(QShowEvent *event) {
     QGraphicsView::showEvent(event);
     if (m_fitted)
@@ -38,7 +47,13 @@ void ImageViewer::showEvent(QShowEvent *event) {
 }
 
 void ImageViewer::wheelEvent(QWheelEvent *event) {
-    QGraphicsView::wheelEvent(event);
+    const int delta = event->angleDelta().y();
+    if (delta == 0) {
+        event->ignore();
+        return;
+    }
+    applyZoom(std::pow(1.15, delta / 120.0));
+    event->accept();
 }
 
 void ImageViewer::keyPressEvent(QKeyEvent *event) {
@@ -46,7 +61,12 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
 }
 
 void ImageViewer::applyZoom(double factor) {
-    Q_UNUSED(factor)
+    const double currentScale = transform().m11();
+    const double newScale = currentScale * factor;
+    if (newScale < 0.05 || newScale > 32.0)
+        return;
+    scale(factor, factor);
+    m_fitted = false;
 }
 
 void ImageViewer::fitImage() {

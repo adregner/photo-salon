@@ -16,6 +16,10 @@ public:
 private slots:
     void zoomPreservesScaleOnResize();
     void keyZeroRestoreFit();
+    void wheelZoomIn();
+    void wheelZoomOut();
+    void wheelClampHigh();
+    void wheelClampLow();
 
 private:
     QString m_imagePath;
@@ -75,6 +79,67 @@ void ZoomTest::keyZeroRestoreFit() {
     // Key 0 calls fitImage → scale returns to fit value
     QTest::keyClick(&viewer, Qt::Key_0);
     QVERIFY(qFuzzyCompare(viewer.transform().m11(), fitScale));
+}
+
+void ZoomTest::wheelZoomIn() {
+    ImageViewer viewer(m_imagePath);
+    double before = viewer.transform().m11(); // 1.0 (identity, no real viewport)
+
+    QWheelEvent event(
+        QPointF(50, 50), QPointF(50, 50),
+        QPoint(0, 0), QPoint(0, 120),
+        Qt::NoButton, Qt::NoModifier,
+        Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(&viewer, &event);
+
+    // scale should have increased by factor ~1.15
+    QVERIFY(viewer.transform().m11() > before);
+}
+
+void ZoomTest::wheelZoomOut() {
+    ImageViewer viewer(m_imagePath);
+    viewer.setTransform(QTransform::fromScale(2.0, 2.0));
+
+    QWheelEvent event(
+        QPointF(50, 50), QPointF(50, 50),
+        QPoint(0, 0), QPoint(0, -120),
+        Qt::NoButton, Qt::NoModifier,
+        Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(&viewer, &event);
+
+    QVERIFY(viewer.transform().m11() < 2.0);
+}
+
+void ZoomTest::wheelClampHigh() {
+    ImageViewer viewer(m_imagePath);
+    // 31.0 * 1.15 = 35.65 > 32.0 — should be blocked
+    viewer.setTransform(QTransform::fromScale(31.0, 31.0));
+
+    QWheelEvent event(
+        QPointF(50, 50), QPointF(50, 50),
+        QPoint(0, 0), QPoint(0, 120),
+        Qt::NoButton, Qt::NoModifier,
+        Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(&viewer, &event);
+
+    QVERIFY(viewer.transform().m11() <= 32.0);
+    QVERIFY(qFuzzyCompare(viewer.transform().m11(), 31.0));
+}
+
+void ZoomTest::wheelClampLow() {
+    ImageViewer viewer(m_imagePath);
+    // 0.04 / 1.15 = 0.0348 < 0.05 — should be blocked
+    viewer.setTransform(QTransform::fromScale(0.04, 0.04));
+
+    QWheelEvent event(
+        QPointF(50, 50), QPointF(50, 50),
+        QPoint(0, 0), QPoint(0, -120),
+        Qt::NoButton, Qt::NoModifier,
+        Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(&viewer, &event);
+
+    // Zoom out is clamped, so scale should stay at 0.04
+    QVERIFY(qFuzzyCompare(viewer.transform().m11(), 0.04));
 }
 
 int main(int argc, char *argv[]) {
