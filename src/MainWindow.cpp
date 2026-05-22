@@ -25,6 +25,7 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
 
     m_helpOverlay = new HelpOverlay(this);
     m_helpOverlay->resize(size());
+    m_helpOverlay->raise();
     connect(viewer, &ImageViewer::helpVisibilityChanged, m_helpOverlay, &QWidget::setVisible);
 }
 
