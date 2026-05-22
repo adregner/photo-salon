@@ -24,6 +24,7 @@ private:
 ZoomTest::ZoomTest() {
     m_tmpFile = new QTemporaryFile("test_XXXXXX.png", this);
     m_tmpFile->open();
+    m_tmpFile->close();
     QImage img(200, 150, QImage::Format_RGB32);
     img.fill(Qt::blue);
     img.save(m_tmpFile->fileName());
