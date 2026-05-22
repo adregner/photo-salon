@@ -16,6 +16,10 @@ public:
     explicit ImageViewer(const QString &imagePath, QWidget *parent = nullptr);
 
     QSize nativeImageSize() const { return m_nativeSize; }
+    bool helpVisible() const { return m_helpVisible; }
+
+signals:
+    void helpVisibilityChanged(bool visible);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -30,4 +34,5 @@ private:
     QGraphicsScene *m_scene;
     QSize m_nativeSize;
     bool m_fitted = true;
+    bool m_helpVisible = false;
 };

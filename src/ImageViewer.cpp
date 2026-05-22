@@ -58,7 +58,17 @@ void ImageViewer::wheelEvent(QWheelEvent *event) {
 }
 
 void ImageViewer::keyPressEvent(QKeyEvent *event) {
+    if (m_helpVisible && event->key() != Qt::Key_Question) {
+        m_helpVisible = false;
+        emit helpVisibilityChanged(false);
+    }
+
     switch (event->key()) {
+    case Qt::Key_Question:
+        m_helpVisible = !m_helpVisible;
+        emit helpVisibilityChanged(m_helpVisible);
+        event->accept();
+        break;
     case Qt::Key_Plus:
     case Qt::Key_Equal:
         applyZoom(1.15);
