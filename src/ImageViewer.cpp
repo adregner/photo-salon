@@ -32,14 +32,6 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     }
 }
 
-bool ImageViewer::event(QEvent *event) {
-    if (event->type() == QEvent::Wheel) {
-        wheelEvent(static_cast<QWheelEvent*>(event));
-        return true;
-    }
-    return QGraphicsView::event(event);
-}
-
 void ImageViewer::showEvent(QShowEvent *event) {
     QGraphicsView::showEvent(event);
     if (m_fitted)

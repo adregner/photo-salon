@@ -49,7 +49,7 @@ void ZoomTest::zoomPreservesScaleOnResize() {
         QPoint(0, 0), QPoint(0, 120),
         Qt::NoButton, Qt::NoModifier,
         Qt::NoScrollPhase, false);
-    QCoreApplication::sendEvent(&viewer, &zoomIn);
+    QCoreApplication::sendEvent(viewer.viewport(), &zoomIn);
     double zoomedScale = viewer.transform().m11();
     QVERIFY(zoomedScale > 1.0);
 
@@ -73,7 +73,7 @@ void ZoomTest::keyZeroRestoreFit() {
         QPoint(0, 0), QPoint(0, 120),
         Qt::NoButton, Qt::NoModifier,
         Qt::NoScrollPhase, false);
-    QCoreApplication::sendEvent(&viewer, &zoomIn);
+    QCoreApplication::sendEvent(viewer.viewport(), &zoomIn);
     QVERIFY(!qFuzzyCompare(viewer.transform().m11(), fitScale));
 
     // Key 0 calls fitImage → scale returns to fit value
@@ -90,7 +90,7 @@ void ZoomTest::wheelZoomIn() {
         QPoint(0, 0), QPoint(0, 120),
         Qt::NoButton, Qt::NoModifier,
         Qt::NoScrollPhase, false);
-    QCoreApplication::sendEvent(&viewer, &event);
+    QCoreApplication::sendEvent(viewer.viewport(), &event);
 
     // scale should have increased by factor ~1.15
     QVERIFY(viewer.transform().m11() > before);
@@ -105,7 +105,7 @@ void ZoomTest::wheelZoomOut() {
         QPoint(0, 0), QPoint(0, -120),
         Qt::NoButton, Qt::NoModifier,
         Qt::NoScrollPhase, false);
-    QCoreApplication::sendEvent(&viewer, &event);
+    QCoreApplication::sendEvent(viewer.viewport(), &event);
 
     QVERIFY(viewer.transform().m11() < 2.0);
 }
@@ -120,7 +120,7 @@ void ZoomTest::wheelClampHigh() {
         QPoint(0, 0), QPoint(0, 120),
         Qt::NoButton, Qt::NoModifier,
         Qt::NoScrollPhase, false);
-    QCoreApplication::sendEvent(&viewer, &event);
+    QCoreApplication::sendEvent(viewer.viewport(), &event);
 
     QVERIFY(viewer.transform().m11() <= 32.0);
     QVERIFY(qFuzzyCompare(viewer.transform().m11(), 31.0));
@@ -136,7 +136,7 @@ void ZoomTest::wheelClampLow() {
         QPoint(0, 0), QPoint(0, -120),
         Qt::NoButton, Qt::NoModifier,
         Qt::NoScrollPhase, false);
-    QCoreApplication::sendEvent(&viewer, &event);
+    QCoreApplication::sendEvent(viewer.viewport(), &event);
 
     // Zoom out is clamped, so scale should stay at 0.04
     QVERIFY(qFuzzyCompare(viewer.transform().m11(), 0.04));

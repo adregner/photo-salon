@@ -13,7 +13,6 @@ public:
     explicit ImageViewer(const QString &imagePath, QWidget *parent = nullptr);
 
 protected:
-    bool event(QEvent *event) override;
     void showEvent(QShowEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
