@@ -21,6 +21,7 @@ private slots:
     void wheelClampHigh();
     void wheelClampLow();
     void keyPlusZoomsIn();
+    void keyPlusClampHigh();
     void keyMinusZoomsOut();
     void keyMinusClampLow();
 
@@ -67,7 +68,8 @@ void ZoomTest::keyZeroRestoreFit() {
     viewer.resize(400, 300);
     QCoreApplication::processEvents();
 
-    // Capture fit-to-window scale (set by showEvent after resize)
+    // Capture fit-to-window scale (processEvents triggers Qt's internal resize/show path)
+    // which calls fitImage() with the real viewport size
     double fitScale = viewer.transform().m11();
 
     // Zoom in — scale moves away from fitScale
@@ -152,6 +154,16 @@ void ZoomTest::keyPlusZoomsIn() {
     QTest::keyClick(&viewer, Qt::Key_Plus);
 
     QVERIFY(viewer.transform().m11() > before);
+}
+
+void ZoomTest::keyPlusClampHigh() {
+    ImageViewer viewer(m_imagePath);
+    // 31.0 * 1.15 = 35.65 > 32.0 — should be blocked
+    viewer.setTransform(QTransform::fromScale(31.0, 31.0));
+
+    QTest::keyClick(&viewer, Qt::Key_Plus);
+
+    QVERIFY(qFuzzyCompare(viewer.transform().m11(), 31.0));
 }
 
 void ZoomTest::keyMinusZoomsOut() {
