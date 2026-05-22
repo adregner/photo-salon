@@ -3,6 +3,8 @@
 #include <QString>
 
 class QGraphicsScene;
+class QWheelEvent;
+class QKeyEvent;
 
 class ImageViewer : public QGraphicsView {
     Q_OBJECT
@@ -12,9 +14,13 @@ public:
 
 protected:
     void showEvent(QShowEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     void fitImage();
+    void applyZoom(double factor);
 
     QGraphicsScene *m_scene;
+    bool m_fitted = true;
 };

@@ -3,6 +3,8 @@
 #include <QGraphicsPixmapItem>
 #include <QGraphicsTextItem>
 #include <QShowEvent>
+#include <QWheelEvent>
+#include <QKeyEvent>
 #include <QPixmap>
 #include <QPainter>
 
@@ -31,7 +33,20 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
 
 void ImageViewer::showEvent(QShowEvent *event) {
     QGraphicsView::showEvent(event);
-    fitImage();
+    if (m_fitted)
+        fitImage();
+}
+
+void ImageViewer::wheelEvent(QWheelEvent *event) {
+    QGraphicsView::wheelEvent(event);
+}
+
+void ImageViewer::keyPressEvent(QKeyEvent *event) {
+    QGraphicsView::keyPressEvent(event);
+}
+
+void ImageViewer::applyZoom(double factor) {
+    Q_UNUSED(factor)
 }
 
 void ImageViewer::fitImage() {
