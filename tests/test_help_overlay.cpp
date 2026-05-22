@@ -24,7 +24,7 @@ private:
 
 HelpOverlayTest::HelpOverlayTest() {
     m_tmpFile = new QTemporaryFile("test_XXXXXX.png", this);
-    m_tmpFile->open();
+    QVERIFY(m_tmpFile->open());
     m_tmpFile->close();
     QImage img(200, 150, QImage::Format_RGB32);
     img.fill(Qt::blue);
