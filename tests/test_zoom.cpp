@@ -14,7 +14,6 @@ public:
     ~ZoomTest();
 
 private slots:
-    void placeholder();
     void zoomPreservesScaleOnResize();
     void keyZeroRestoreFit();
 
@@ -34,10 +33,6 @@ ZoomTest::ZoomTest() {
 }
 
 ZoomTest::~ZoomTest() {}
-
-void ZoomTest::placeholder() {
-    QVERIFY(true);
-}
 
 void ZoomTest::zoomPreservesScaleOnResize() {
     ImageViewer viewer(m_imagePath);
@@ -65,18 +60,21 @@ void ZoomTest::keyZeroRestoreFit() {
     viewer.resize(400, 300);
     QCoreApplication::processEvents();
 
-    // Zoom in
+    // Capture fit-to-window scale (set by showEvent after resize)
+    double fitScale = viewer.transform().m11();
+
+    // Zoom in — scale moves away from fitScale
     QWheelEvent zoomIn(
         QPointF(200, 150), QPointF(200, 150),
         QPoint(0, 0), QPoint(0, 120),
         Qt::NoButton, Qt::NoModifier,
         Qt::NoScrollPhase, false);
     QCoreApplication::sendEvent(&viewer, &zoomIn);
-    QVERIFY(viewer.transform().m11() < 1.5); // scale ≈ 1.15
+    QVERIFY(!qFuzzyCompare(viewer.transform().m11(), fitScale));
 
-    // Key 0 calls fitImage (image 200x150 fits into ~400x300 → scale ≈ 2.0)
+    // Key 0 calls fitImage → scale returns to fit value
     QTest::keyClick(&viewer, Qt::Key_0);
-    QVERIFY(viewer.transform().m11() > 1.5); // scale jumped to fit value
+    QVERIFY(qFuzzyCompare(viewer.transform().m11(), fitScale));
 }
 
 int main(int argc, char *argv[]) {
