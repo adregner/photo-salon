@@ -8,5 +8,5 @@ class HelpOverlay : public QWidget {
 public:
     explicit HelpOverlay(QWidget *parent = nullptr);
 protected:
-    void paintEvent(QPaintEvent *event) override;
+    void paintEvent(QPaintEvent *) override;
 };
