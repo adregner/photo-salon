@@ -20,6 +20,9 @@ private slots:
     void wheelZoomOut();
     void wheelClampHigh();
     void wheelClampLow();
+    void keyPlusZoomsIn();
+    void keyMinusZoomsOut();
+    void keyMinusClampLow();
 
 private:
     QString m_imagePath;
@@ -60,7 +63,6 @@ void ZoomTest::zoomPreservesScaleOnResize() {
 }
 
 void ZoomTest::keyZeroRestoreFit() {
-    QSKIP("keyPressEvent not yet implemented — passes after Task 4");
     ImageViewer viewer(m_imagePath);
     viewer.resize(400, 300);
     QCoreApplication::processEvents();
@@ -141,6 +143,34 @@ void ZoomTest::wheelClampLow() {
 
     // Zoom out is clamped, so scale should stay at 0.04
     QVERIFY(qAbs(viewer.transform().m11() - 0.04) < 1e-9);
+}
+
+void ZoomTest::keyPlusZoomsIn() {
+    ImageViewer viewer(m_imagePath);
+    double before = viewer.transform().m11();
+
+    QTest::keyClick(&viewer, Qt::Key_Plus);
+
+    QVERIFY(viewer.transform().m11() > before);
+}
+
+void ZoomTest::keyMinusZoomsOut() {
+    ImageViewer viewer(m_imagePath);
+    viewer.setTransform(QTransform::fromScale(2.0, 2.0));
+
+    QTest::keyClick(&viewer, Qt::Key_Minus);
+
+    QVERIFY(viewer.transform().m11() < 2.0);
+}
+
+void ZoomTest::keyMinusClampLow() {
+    ImageViewer viewer(m_imagePath);
+    // 0.055 / 1.15 = 0.0478 < 0.05 — clamp triggers
+    viewer.setTransform(QTransform::fromScale(0.055, 0.055));
+
+    QTest::keyClick(&viewer, Qt::Key_Minus);
+
+    QVERIFY(qAbs(viewer.transform().m11() - 0.055) < 1e-9);
 }
 
 int main(int argc, char *argv[]) {

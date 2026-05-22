@@ -18,6 +18,7 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     setDragMode(QGraphicsView::ScrollHandDrag);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
 
     QPixmap pixmap(imagePath);
     if (pixmap.isNull()) {
@@ -49,7 +50,25 @@ void ImageViewer::wheelEvent(QWheelEvent *event) {
 }
 
 void ImageViewer::keyPressEvent(QKeyEvent *event) {
-    QGraphicsView::keyPressEvent(event);
+    switch (event->key()) {
+    case Qt::Key_Plus:
+    case Qt::Key_Equal:
+        applyZoom(1.15);
+        event->accept();
+        break;
+    case Qt::Key_Minus:
+        applyZoom(1.0 / 1.15);
+        event->accept();
+        break;
+    case Qt::Key_0:
+        m_fitted = true;
+        fitImage();
+        event->accept();
+        break;
+    default:
+        QGraphicsView::keyPressEvent(event);
+        break;
+    }
 }
 
 void ImageViewer::applyZoom(double factor) {
