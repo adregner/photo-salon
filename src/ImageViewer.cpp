@@ -2,11 +2,12 @@
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsTextItem>
-#include <QShowEvent>
-#include <QWheelEvent>
 #include <QKeyEvent>
 #include <QPixmap>
 #include <QPainter>
+#include <QResizeEvent>
+#include <QShowEvent>
+#include <QWheelEvent>
 #include <cmath>
 
 ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
@@ -27,6 +28,7 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
         errorText->setDefaultTextColor(Qt::red);
         m_scene->addItem(errorText);
     } else {
+        m_nativeSize = pixmap.size();
         m_scene->addPixmap(pixmap);
         m_scene->setSceneRect(pixmap.rect());
         fitImage();
@@ -36,6 +38,12 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
 void ImageViewer::showEvent(QShowEvent *event) {
     QGraphicsView::showEvent(event);
     if (m_fitted)
+        fitImage();
+}
+
+void ImageViewer::resizeEvent(QResizeEvent *event) {
+    QGraphicsView::resizeEvent(event);
+    if (m_fitted && isVisible())
         fitImage();
 }
 

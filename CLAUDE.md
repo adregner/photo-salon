@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-C++ Qt6 desktop image viewer. Cross-platform: Linux (primary dev/test), macOS, and Windows 10/11.
+C++ Qt6 desktop image viewer. Cross-platform: Linux, macOS (primary dev/test), and Windows 10/11.
 
 ## Build
 
 ```bash
-cmake -B build
-cmake --build build
+cmake -B _build
+cmake --build _build
 ```
 
 ## Run
@@ -25,6 +25,7 @@ cmake --build build
 - Source files live in `src/`
 - Design specs in `docs/superpowers/specs/`
 - Implementation plans in `docs/superpowers/plans/`
+- Only use formal specs and implementation plans for more complex feature development
 - All image formats are JPG until format support is added (see ROADMAP.md)
 
 ## Architecture

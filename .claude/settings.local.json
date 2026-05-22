@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(brew list *)",
+      "Bash(brew info *)",
+      "Bash(git *)",
+      "Bash(cmake *)",
+      "Bash(xargs ls -la)",
+      "Bash(qmake6 --version)",
+      "Bash(qmake --version)",
+      "Bash(pkg-config --modversion Qt6Core)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(QT_QPA_PLATFORM=offscreen ./_build/tests/test_zoom)",
+      "Bash(xargs cat)",
+      "WebSearch",
+      "Bash(QT_QPA_PLATFORM=offscreen ctest *)",
+      "Bash(./_build/tests/test_zoom *)"
+    ]
+  }
+}

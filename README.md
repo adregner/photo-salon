@@ -24,15 +24,15 @@ sudo apt install qt6-base-dev qt6-base-dev-tools cmake g++
 ### Linux / macOS
 
 ```bash
-cmake -B build
-cmake --build build
+cmake -B _build
+cmake --build _build
 ```
 
 On macOS, if Qt6 is not found automatically:
 
 ```bash
-cmake -B build -DCMAKE_PREFIX_PATH=$(brew --prefix qt)
-cmake --build build
+cmake -B _build -DCMAKE_PREFIX_PATH=$(brew --prefix qt)
+cmake --build _build
 ```
 
 ### Windows
@@ -40,8 +40,8 @@ cmake --build build
 Open a **Developer Command Prompt for VS 2022**, then:
 
 ```powershell
-cmake -B build -DCMAKE_PREFIX_PATH=C:/Qt/6.x.x/msvc2022_64
-cmake --build build --config Release
+cmake -B _build -DCMAKE_PREFIX_PATH=C:/Qt/6.x.x/msvc2022_64
+cmake --build _build --config Release
 ```
 
 Replace `6.x.x` with the Qt version you installed (e.g. `6.8.0`).
