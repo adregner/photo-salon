@@ -11,6 +11,12 @@ cmake -B _build
 cmake --build _build
 ```
 
+If `compile_commands.json` is missing or out of date, run this to create it:
+
+```bash
+cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
+```
+
 ## Run
 
 ```bash
@@ -27,6 +33,7 @@ cmake --build _build
 - Implementation plans in `docs/superpowers/plans/`
 - Only use formal specs and implementation plans for more complex feature development
 - All image formats are JPG until format support is added (see ROADMAP.md)
+- When adding new features, check to see if `README.md`, `CLAUDE.md`, or `ROADMAP.md` needs to be updated to reflect the new changes
 
 ## Architecture
 
