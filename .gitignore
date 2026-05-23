@@ -9,6 +9,8 @@ Thumbs.db
 CMakeUserPresets.json
 .cache/
 _build/
+_qt_build/
+_build_win/
 
 # CMake build artifacts (generated in source root)
 .qt/
