@@ -7,3 +7,14 @@ Thumbs.db
 .vscode/
 .qtcreator/
 CMakeUserPresets.json
+.cache/
+_build/
+
+# CMake build artifacts (generated in source root)
+.qt/
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+Makefile
+cmake_install.cmake
+compile_commands.json
