@@ -72,10 +72,12 @@ cmake -B "$QT_BUILD_DIR" -S "$SOURCE_DIR" \
     -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
     -DCMAKE_INSTALL_PREFIX="$QT_INSTALL_PREFIX" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_IGNORE_PREFIX_PATH=/opt/homebrew \
     -DBUILD_SHARED_LIBS=OFF \
     -DQT_BUILD_TESTS=OFF \
     -DQT_BUILD_EXAMPLES=OFF \
     -DQT_HOST_PATH="$HOST_QT_PATH" \
+    -DFEATURE_force_bundled_libs=ON \
     -DQT_FEATURE_dbus=OFF \
     -DQT_FEATURE_sql=OFF \
     -DQT_FEATURE_network=OFF \
@@ -84,7 +86,8 @@ cmake -B "$QT_BUILD_DIR" -S "$SOURCE_DIR" \
     -DQT_FEATURE_accessibility=OFF \
     -DQT_FEATURE_testlib=OFF \
     -DQT_FEATURE_printsupport=OFF \
-    -DQT_FEATURE_opengl=OFF
+    -DQT_FEATURE_direct2d=OFF \
+    -DQT_FEATURE_zstd=OFF
 
 # --- Build ---
 echo "Building Qt (30-50 minutes on first run)..."
