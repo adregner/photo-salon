@@ -14,7 +14,11 @@
       "Bash(xargs cat)",
       "WebSearch",
       "Bash(QT_QPA_PLATFORM=offscreen ctest *)",
-      "Bash(./_build/tests/test_zoom *)"
+      "Bash(./_build/tests/test_zoom *)",
+      "Bash(QT_QPA_PLATFORM=offscreen /Users/andrew_regner/dev/personal/photo-salon/_build/tests/test_help_overlay *)",
+      "Bash(QT_QPA_PLATFORM=offscreen /Users/andrew_regner/dev/personal/photo-salon/_build/tests/test_zoom *)",
+      "Bash(QT_QPA_PLATFORM=offscreen ./_build/tests/test_help_overlay)",
+      "Bash(ctest *)"
     ]
   }
 }
