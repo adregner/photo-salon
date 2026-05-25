@@ -18,7 +18,24 @@
       "Bash(QT_QPA_PLATFORM=offscreen /Users/andrew_regner/dev/personal/photo-salon/_build/tests/test_help_overlay *)",
       "Bash(QT_QPA_PLATFORM=offscreen /Users/andrew_regner/dev/personal/photo-salon/_build/tests/test_zoom *)",
       "Bash(QT_QPA_PLATFORM=offscreen ./_build/tests/test_help_overlay)",
-      "Bash(ctest *)"
+      "Bash(ctest *)",
+      "Bash(chmod +x *)",
+      "Bash([ -f \"$HOME/dev/personal/qt-win-static/6.11.1/mingw64/include/QtCore/qobject.h\" ])",
+      "Read(//opt/homebrew/Cellar/double-conversion/3.4.0/lib/cmake/double-conversion/**)",
+      "Read(//opt/homebrew/Cellar/md4c/0.5.3/lib/cmake/md4c/**)",
+      "Bash(awk *)",
+      "Bash(python3 -c \"import sys,json; t=json.load\\(sys.stdin\\); print\\([x for x in t.get\\('libc',{}\\) if 'windows' in x.lower\\(\\)][:10]\\)\")",
+      "Bash(/opt/homebrew/opt/llvm/bin/llvm-dlltool --version)",
+      "Read(//private/tmp/**)",
+      "Bash(/opt/homebrew/opt/llvm/bin/llvm-nm /tmp/test_msvc.obj)",
+      "Bash(grep -v \"^$\")",
+      "Bash(/opt/homebrew/opt/llvm/bin/clang-cl --target=x86_64-windows-msvc -imsvc msvc-include -imsvc winkit-include/ucrt -imsvc winkit-include/shared -imsvc winkit-include/um -I qt-6.11.1-win_x86_64-static/include -I qt-6.11.1-win_x86_64-static/include/QtWidgets -I qt-6.11.1-win_x86_64-static/include/QtCore -c src/main.cpp -o /tmp/test_main.obj)",
+      "Bash(/opt/homebrew/opt/llvm/bin/clang-cl --target=x86_64-windows-msvc /std:c++17 /Zc:__cplusplus -imsvc msvc-include -imsvc winkit-include/ucrt -imsvc winkit-include/shared -imsvc winkit-include/um -I qt-6.11.1-win_x86_64-static/include -I qt-6.11.1-win_x86_64-static/include/QtWidgets -I qt-6.11.1-win_x86_64-static/include/QtCore -c src/main.cpp -o /tmp/test_main.obj)",
+      "Bash(/opt/homebrew/opt/llvm/bin/llvm-nm /tmp/test_main.obj)",
+      "Read(//opt/homebrew/opt/llvm/bin/**)",
+      "Bash(/opt/homebrew/opt/llvm/bin/lld-link --version)",
+      "Bash(/opt/homebrew/opt/lld@21/bin/lld-link --version)",
+      "Write(docs/superpowers/plans/*.md)"
     ]
   }
 }
