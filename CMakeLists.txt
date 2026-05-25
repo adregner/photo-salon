@@ -18,5 +18,8 @@ target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets)
 
 qt_add_executable(photo-salon src/main.cpp)
 target_link_libraries(photo-salon PRIVATE photo-salon-lib)
+if(WIN32)
+    set_target_properties(photo-salon PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 
 add_subdirectory(tests)

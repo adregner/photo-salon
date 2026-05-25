@@ -17,6 +17,15 @@ If `compile_commands.json` is missing or out of date, run this to create it:
 cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
 ```
 
+## Windows Cross-Compilation
+
+Cross-compile a static `photo-salon.exe` from macOS using `clang-cl` and `lld-link` (MSVC ABI). See `WINDOWS.md` for prerequisites, directory layout, and full instructions.
+
+```bash
+./build-windows.sh
+# → _build_win/photo-salon.exe
+```
+
 ## Run
 
 ```bash
@@ -45,4 +54,4 @@ cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
 
 - `fitInView` must be called in both the constructor and `showEvent` — the widget has no real size until shown
 - `qt_standard_project_setup()` handles MOC automatically — do not add `CMAKE_AUTOMOC` manually
-- `setDragMode(ScrollHandDrag)` is a forward-looking stub for pan — not fully functional until zoom is implemented
+- `setDragMode(ScrollHandDrag)` enables pan; zoom is implemented via `wheelEvent` and keyboard +/-/0

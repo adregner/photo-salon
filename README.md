@@ -35,7 +35,7 @@ cmake -B _build -DCMAKE_PREFIX_PATH=$(brew --prefix qt)
 cmake --build _build
 ```
 
-### Windows
+### Windows (native)
 
 Open a **Developer Command Prompt for VS 2022**, then:
 
@@ -45,6 +45,15 @@ cmake --build _build --config Release
 ```
 
 Replace `6.x.x` with the Qt version you installed (e.g. `6.8.0`).
+
+### Windows (cross-compile from macOS)
+
+Cross-compiles a self-contained static `.exe` using `clang-cl` targeting the MSVC ABI. See [`WINDOWS.md`](WINDOWS.md) for prerequisites and setup.
+
+```bash
+./build-windows.sh
+# → _build_win/photo-salon.exe
+```
 
 ## Running
 
