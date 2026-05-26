@@ -1,27 +1,96 @@
-build/
-.worktrees/
-.superpowers/
-*.user
-.DS_Store
-Thumbs.db
-.vscode/
-.qtcreator/
-CMakeUserPresets.json
-.cache/
-_build/
-_qt_build/
 _build_win/
-
-# CMake build artifacts (generated in source root)
-.qt/
-CMakeCache.txt
-CMakeFiles/
-CTestTestfile.cmake
-Makefile
-cmake_install.cmake
-compile_commands.json
+_build/
+.DS_Store
+.vscode/
+.worktrees/
+*.user
+Thumbs.db
 
 # Pre-compiled and large imports from Windows
-windows/msvc/include/
 windows/qt-6.11/
+windows/msvc/include/
 windows/sdk/include/
+
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Linker files
+*.ilk
+
+# Debugger Files
+*.pdb
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+*.so.*
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Build directories
+build/
+Build/
+build-*/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+
+CMakeLists.txt.user
+CMakeScripts
+Testing
+CTestTestfile.cmake
+_deps
+CMakeUserPresets.json
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.swp
+
+# vcpkg
+vcpkg_installed/
+
+# debug information files
+*.dwo
+
+# test output & cache
+Testing/
+.cache/
+
+# CLion
+#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
+#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
+#  and can be added to the global gitignore or merged into this file.  For a more nuclear
+#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
+#cmake-build-*
