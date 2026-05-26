@@ -22,6 +22,8 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
     const QString text =
         "Keyboard Shortcuts\n"
         "\n"
+        "  →    Next image in folder\n"
+        "  ←    Previous image in folder\n"
         "  +    Zoom in\n"
         "  -    Zoom out\n"
         "  0    Fit to window\n"
