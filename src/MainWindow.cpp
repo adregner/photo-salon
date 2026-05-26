@@ -12,8 +12,10 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     auto *viewer = new ImageViewer(imagePath, this);
     setCentralWidget(viewer);
 
-    QString filename = QFileInfo(imagePath).fileName();
-    setWindowTitle(QString("photo-salon — %1").arg(filename));
+    setWindowTitle(QString("photo-salon — %1").arg(QFileInfo(imagePath).fileName()));
+    connect(viewer, &ImageViewer::imagePathChanged, this, [this](const QString &path) {
+        setWindowTitle(QString("photo-salon — %1").arg(QFileInfo(path).fileName()));
+    });
 
     QSize imageSize = viewer->nativeImageSize();
     if (!imageSize.isEmpty()) {

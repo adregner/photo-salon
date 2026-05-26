@@ -3,6 +3,7 @@
 #include <QSize>
 #include <QString>
 
+class QGraphicsPixmapItem;
 class QGraphicsScene;
 class QKeyEvent;
 class QResizeEvent;
@@ -15,11 +16,15 @@ class ImageViewer : public QGraphicsView {
 public:
     explicit ImageViewer(const QString &imagePath, QWidget *parent = nullptr);
 
+    void loadImage(const QString &path);
+    QString currentPath() const { return m_imagePath; }
     QSize nativeImageSize() const { return m_nativeSize; }
     bool helpVisible() const { return m_helpVisible; }
+    QPixmap pixmap() const;
 
 signals:
     void helpVisibilityChanged(bool visible);
+    void imagePathChanged(const QString &path);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -30,8 +35,11 @@ protected:
 private:
     void fitImage();
     void applyZoom(double factor);
+    void navigate(int delta);
 
     QGraphicsScene *m_scene;
+    QGraphicsPixmapItem *m_pixmapItem = nullptr;
+    QString m_imagePath;
     QSize m_nativeSize;
     bool m_fitted = true;
     bool m_helpVisible = false;

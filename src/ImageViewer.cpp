@@ -1,6 +1,9 @@
 #include "ImageViewer.h"
-#include <QGraphicsScene>
+#include "ImageFormats.h"
+#include <QDir>
+#include <QFileInfo>
 #include <QGraphicsPixmapItem>
+#include <QGraphicsScene>
 #include <QGraphicsTextItem>
 #include <QKeyEvent>
 #include <QPixmap>
@@ -20,39 +23,58 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+    loadImage(imagePath);
+}
 
-    QPixmap pixmap(imagePath);
+void ImageViewer::loadImage(const QString &path) {
+    m_scene->clear();
+    m_pixmapItem = nullptr;
+    m_imagePath = path;
+
+    QPixmap pixmap(path);
     if (pixmap.isNull()) {
         auto *errorText = new QGraphicsTextItem(
-            QString("Failed to load image:\n%1").arg(imagePath));
+            QString("Failed to load image:\n%1").arg(path));
         errorText->setDefaultTextColor(Qt::red);
         m_scene->addItem(errorText);
     } else {
         m_nativeSize = pixmap.size();
-        m_scene->addPixmap(pixmap);
+        m_pixmapItem = m_scene->addPixmap(pixmap);
         m_scene->setSceneRect(pixmap.rect());
+        m_fitted = true;
         fitImage();
     }
+    emit imagePathChanged(m_imagePath);
+}
+
+QPixmap ImageViewer::pixmap() const {
+    return m_pixmapItem ? m_pixmapItem->pixmap() : QPixmap{};
+}
+
+void ImageViewer::navigate(int delta) {
+    if (m_imagePath.isEmpty()) return;
+    QFileInfo info(m_imagePath);
+    QDir dir = info.absoluteDir();
+    QStringList files = dir.entryList(supportedExtensions(), QDir::Files, QDir::Name);
+    int idx = files.indexOf(info.fileName());
+    if (idx < 0 || files.isEmpty()) return;
+    int next = ((idx + delta) % files.size() + files.size()) % files.size();
+    loadImage(dir.absoluteFilePath(files[next]));
 }
 
 void ImageViewer::showEvent(QShowEvent *event) {
     QGraphicsView::showEvent(event);
-    if (m_fitted)
-        fitImage();
+    if (m_fitted) fitImage();
 }
 
 void ImageViewer::resizeEvent(QResizeEvent *event) {
     QGraphicsView::resizeEvent(event);
-    if (m_fitted && isVisible())
-        fitImage();
+    if (m_fitted && isVisible()) fitImage();
 }
 
 void ImageViewer::wheelEvent(QWheelEvent *event) {
     const int delta = event->angleDelta().y();
-    if (delta == 0) {
-        event->ignore();
-        return;
-    }
+    if (delta == 0) { event->ignore(); return; }
     applyZoom(std::pow(1.15, delta / 120.0));
     event->accept();
 }
@@ -64,6 +86,14 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
     }
 
     switch (event->key()) {
+    case Qt::Key_Left:
+        navigate(-1);
+        event->accept();
+        break;
+    case Qt::Key_Right:
+        navigate(1);
+        event->accept();
+        break;
     case Qt::Key_Question:
         m_helpVisible = !m_helpVisible;
         emit helpVisibilityChanged(m_helpVisible);
@@ -92,8 +122,7 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
 void ImageViewer::applyZoom(double factor) {
     const double currentScale = transform().m11();
     const double newScale = currentScale * factor;
-    if (newScale < 0.05 || newScale > 32.0)
-        return;
+    if (newScale < 0.05 || newScale > 32.0) return;
     scale(factor, factor);
     m_fitted = false;
 }
