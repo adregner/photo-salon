@@ -17,3 +17,9 @@ target_link_libraries(test_image_formats PRIVATE Qt6::Test photo-salon-lib)
 add_test(NAME test_image_formats COMMAND test_image_formats)
 set_tests_properties(test_image_formats PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(test_folder_navigation test_folder_navigation.cpp)
+target_link_libraries(test_folder_navigation PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_folder_navigation COMMAND test_folder_navigation)
+set_tests_properties(test_folder_navigation PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
