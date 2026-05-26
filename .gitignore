@@ -20,3 +20,8 @@ CTestTestfile.cmake
 Makefile
 cmake_install.cmake
 compile_commands.json
+
+# Pre-compiled and large imports from Windows
+windows/msvc/include/
+windows/qt-6.11/
+windows/sdk/include/
