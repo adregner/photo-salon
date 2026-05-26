@@ -12,6 +12,7 @@ add_library(photo-salon-lib STATIC
     src/MainWindow.cpp
     src/ImageViewer.cpp
     src/HelpOverlay.cpp
+    src/ImageFormats.cpp
 )
 target_include_directories(photo-salon-lib PUBLIC src)
 target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets)
