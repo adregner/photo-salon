@@ -55,7 +55,9 @@ void ImageViewer::navigate(int delta) {
     if (m_imagePath.isEmpty()) return;
     QFileInfo info(m_imagePath);
     QDir dir = info.absoluteDir();
-    QStringList files = dir.entryList(supportedExtensions(), QDir::Files, QDir::Name);
+    QStringList exts = supportedExtensions();
+    exts.removeAll("*.svg");
+    QStringList files = dir.entryList(exts, QDir::Files, QDir::Name);
     int idx = files.indexOf(info.fileName());
     if (idx < 0 || files.isEmpty()) return;
     int next = ((idx + delta) % files.size() + files.size()) % files.size();
