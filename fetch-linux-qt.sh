@@ -34,7 +34,7 @@ fi
 
 mkdir -p "$DEST"
 echo "  fetch Qt $QT_VERSION → $QT_PREFIX"
-aqt install-qt --outputdir "$DEST" linux desktop "$QT_VERSION" linux_gcc_64 --archives qtbase
+aqt install-qt --outputdir "$DEST" linux desktop "$QT_VERSION" linux_gcc_64 --archives icu qtbase
 
 echo "Done."
 echo ""
