@@ -12,6 +12,7 @@ windows/qt-6.11/
 windows/msvc/include/
 windows/sdk/include/
 
+qt-linux/
 
 # Prerequisites
 *.d

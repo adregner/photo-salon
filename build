@@ -1,3 +1,82 @@
 #!/usr/bin/env bash
-cmake -B _build -DCMAKE_BUILD_TYPE=Release
+set -euo pipefail
+
+MIN_QT="6.11.1"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+OS="$(uname)"
+
+# Pure-bash version comparison: returns 0 (true) if $1 >= $2
+version_gte() {
+    local IFS='.'
+    local -a v1=($1) v2=($2)
+    local i
+    for ((i = 0; i < ${#v2[@]}; i++)); do
+        local a="${v1[i]:-0}" b="${v2[i]:-0}"
+        ((a > b)) && return 0
+        ((a < b)) && return 1
+    done
+    return 0
+}
+
+qt_version_at() {
+    local qmake="$1/bin/qmake"
+    [ -x "$qmake" ] && "$qmake" -query QT_VERSION 2>/dev/null || echo ""
+}
+
+CMAKE_PREFIX=""
+
+# 1. Locally fetched Qt (Linux fetch-linux-qt.sh output)
+LOCAL_QT="$SCRIPT_DIR/qt-linux/$MIN_QT/gcc_64"
+if [ -d "$LOCAL_QT/lib/cmake/Qt6" ]; then
+    CMAKE_PREFIX="$LOCAL_QT"
+fi
+
+# 2. System or Homebrew Qt
+if [ -z "$CMAKE_PREFIX" ]; then
+    QMAKE=""
+    if command -v qmake6 &>/dev/null; then
+        QMAKE="qmake6"
+    elif command -v qmake &>/dev/null; then
+        QMAKE="qmake"
+    fi
+
+    if [ -n "$QMAKE" ]; then
+        SYS_VER="$($QMAKE -query QT_VERSION 2>/dev/null || echo "")"
+        SYS_PREFIX="$($QMAKE -query QT_INSTALL_PREFIX 2>/dev/null || echo "")"
+        if [ -n "$SYS_VER" ] && version_gte "$SYS_VER" "$MIN_QT"; then
+            CMAKE_PREFIX="$SYS_PREFIX"
+        fi
+    fi
+
+    # macOS: also probe the Homebrew qt keg directly
+    if [ -z "$CMAKE_PREFIX" ] && [ "$OS" = "Darwin" ] && command -v brew &>/dev/null; then
+        BREW_QT="$(brew --prefix qt 2>/dev/null || echo "")"
+        if [ -n "$BREW_QT" ] && [ -d "$BREW_QT" ]; then
+            BREW_VER="$(qt_version_at "$BREW_QT")"
+            if [ -n "$BREW_VER" ] && version_gte "$BREW_VER" "$MIN_QT"; then
+                CMAKE_PREFIX="$BREW_QT"
+            fi
+        fi
+    fi
+fi
+
+# 3. Still nothing — take platform-specific action
+if [ -z "$CMAKE_PREFIX" ]; then
+    if [ "$OS" = "Darwin" ]; then
+        echo "error: Qt $MIN_QT or later is required but was not found." >&2
+        echo "" >&2
+        echo "Install it with Homebrew:" >&2
+        echo "  brew install qt" >&2
+        echo "" >&2
+        echo "If Qt is already installed but outdated:" >&2
+        echo "  brew upgrade qt" >&2
+        exit 1
+    else
+        echo "Qt $MIN_QT or later not found — fetching locally..."
+        "$SCRIPT_DIR/fetch-linux-qt.sh"
+        CMAKE_PREFIX="$LOCAL_QT"
+    fi
+fi
+
+cmake -B _build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX"
 cmake --build _build
