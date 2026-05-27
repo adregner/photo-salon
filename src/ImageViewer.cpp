@@ -119,6 +119,11 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         emit folderBrowseRequested();
         event->accept();
         break;
+    case Qt::Key_F:
+    case Qt::Key_Escape:
+        emit fullscreenToggleRequested();
+        event->accept();
+        break;
     default:
         QGraphicsView::keyPressEvent(event);
         break;
