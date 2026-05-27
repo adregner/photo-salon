@@ -29,6 +29,7 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "  0        Fit to window\n"
         "  F        Toggle fullscreen\n"
         "  Escape   Exit fullscreen\n"
+        "  B        Background color picker\n"
         "  ?        Show/hide this help\n"
         "\n"
         "Mouse & Other Controls\n"

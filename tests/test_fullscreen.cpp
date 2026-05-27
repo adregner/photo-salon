@@ -14,9 +14,9 @@ public:
 
 private slots:
     void keyF_emitsToggle();
-    void keyEscape_emitsToggle();
+    void keyEscape_closesHelp_whenHelpOpen();
+    void keyEscape_doesNotEmitToggle_whenHelpClosed();
     void keyF_withHelpOpen_closesHelpAndEmitsToggle();
-    void keyEscape_withHelpClosed_emitsToggle();
     void otherKeys_doNotEmitToggle();
 
 private:
@@ -43,11 +43,23 @@ void FullscreenTest::keyF_emitsToggle() {
     QCOMPARE(spy.count(), 1);
 }
 
-void FullscreenTest::keyEscape_emitsToggle() {
+// Escape is handled globally by MainWindow's event filter.
+// When ImageViewer is tested in isolation, pressing Escape closes the
+// help overlay (via the top-of-keyPressEvent guard) but does NOT emit
+// fullscreenToggleRequested — that is MainWindow's responsibility.
+void FullscreenTest::keyEscape_closesHelp_whenHelpOpen() {
+    ImageViewer viewer(m_imagePath);
+    QTest::keyClick(&viewer, Qt::Key_Question);
+    QVERIFY(viewer.helpVisible());
+    QTest::keyClick(&viewer, Qt::Key_Escape);
+    QVERIFY(!viewer.helpVisible());
+}
+
+void FullscreenTest::keyEscape_doesNotEmitToggle_whenHelpClosed() {
     ImageViewer viewer(m_imagePath);
     QSignalSpy spy(&viewer, &ImageViewer::fullscreenToggleRequested);
     QTest::keyClick(&viewer, Qt::Key_Escape);
-    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.count(), 0);
 }
 
 void FullscreenTest::keyF_withHelpOpen_closesHelpAndEmitsToggle() {
@@ -59,16 +71,6 @@ void FullscreenTest::keyF_withHelpOpen_closesHelpAndEmitsToggle() {
     QTest::keyClick(&viewer, Qt::Key_F);
 
     QVERIFY(!viewer.helpVisible());
-    QCOMPARE(spy.count(), 1);
-}
-
-void FullscreenTest::keyEscape_withHelpClosed_emitsToggle() {
-    ImageViewer viewer(m_imagePath);
-    QVERIFY(!viewer.helpVisible());
-
-    QSignalSpy spy(&viewer, &ImageViewer::fullscreenToggleRequested);
-    QTest::keyClick(&viewer, Qt::Key_Escape);
-
     QCOMPARE(spy.count(), 1);
 }
 

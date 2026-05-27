@@ -23,6 +23,7 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+    setBackgroundBrush(Qt::black);
     loadImage(imagePath);
 }
 
@@ -120,8 +121,11 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         event->accept();
         break;
     case Qt::Key_F:
-    case Qt::Key_Escape:
         emit fullscreenToggleRequested();
+        event->accept();
+        break;
+    case Qt::Key_B:
+        emit backgroundPickerRequested();
         event->accept();
         break;
     default:
@@ -136,6 +140,18 @@ void ImageViewer::applyZoom(double factor) {
     if (newScale < 0.05 || newScale > 32.0) return;
     scale(factor, factor);
     m_fitted = false;
+}
+
+void ImageViewer::closeHelp() {
+    if (m_helpVisible) {
+        m_helpVisible = false;
+        emit helpVisibilityChanged(false);
+    }
+}
+
+void ImageViewer::setBackgroundGrey(int value) {
+    m_backgroundGrey = qBound(0, value, 255);
+    setBackgroundBrush(QColor(m_backgroundGrey, m_backgroundGrey, m_backgroundGrey));
 }
 
 void ImageViewer::fitImage() {
