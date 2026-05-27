@@ -20,13 +20,17 @@ public:
     QString currentPath() const { return m_imagePath; }
     QSize nativeImageSize() const { return m_nativeSize; }
     bool helpVisible() const { return m_helpVisible; }
+    void closeHelp();
     QPixmap pixmap() const;
+    void setBackgroundGrey(int value);
+    int backgroundGrey() const { return m_backgroundGrey; }
 
 signals:
     void helpVisibilityChanged(bool visible);
     void imagePathChanged(const QString &path);
     void folderBrowseRequested();
     void fullscreenToggleRequested();
+    void backgroundPickerRequested();
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -45,4 +49,5 @@ private:
     QSize m_nativeSize;
     bool m_fitted = true;
     bool m_helpVisible = false;
+    int m_backgroundGrey = 0;
 };
