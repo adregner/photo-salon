@@ -3,6 +3,7 @@ set -euo pipefail
 
 MIN_QT="6.11.1"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+QT_LINUX_DIR="/opt/qt-linux"
 OS="$(uname)"
 
 # Pure-bash version comparison: returns 0 (true) if $1 >= $2
@@ -26,7 +27,7 @@ qt_version_at() {
 CMAKE_PREFIX=""
 
 # 1. Locally fetched Qt (Linux fetch-linux-qt.sh output)
-LOCAL_QT="$SCRIPT_DIR/qt-linux/$MIN_QT/gcc_64"
+LOCAL_QT="$QT_LINUX_DIR/$MIN_QT/gcc_64"
 if [ -d "$LOCAL_QT/lib/cmake/Qt6" ]; then
     CMAKE_PREFIX="$LOCAL_QT"
 fi

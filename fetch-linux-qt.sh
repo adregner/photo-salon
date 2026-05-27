@@ -2,7 +2,7 @@
 set -euo pipefail
 
 QT_VERSION="${QT_VERSION:-6.11.1}"
-DEST="$(cd "$(dirname "$0")" && pwd)/qt-linux"
+DEST="/opt/qt-linux"
 QT_PREFIX="$DEST/$QT_VERSION/gcc_64"
 QT_CMAKE_DIR="$QT_PREFIX/lib/cmake/Qt6"
 
