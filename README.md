@@ -1,6 +1,6 @@
 # photo-salon
 
-A cross-platform desktop image viewer built with C++ and Qt6.
+A cross-platform minimalistic desktop photo viewing application to facilitate in-person photography salons.
 
 ## Prerequisites
 

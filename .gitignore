@@ -5,6 +5,7 @@ _build/
 .worktrees/
 *.user
 Thumbs.db
+CLAUDE.local.md
 
 # Pre-compiled and large imports from Windows
 windows/qt-6.11/
