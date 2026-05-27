@@ -26,4 +26,5 @@ private:
     HelpOverlay *m_helpOverlay = nullptr;
     BackgroundColorPicker *m_colorPicker = nullptr;
     Qt::WindowStates m_windowStateBeforeFullscreen = Qt::WindowNoState;
+    bool m_forwardingKeyEvent = false;
 };
