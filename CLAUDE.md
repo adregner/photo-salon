@@ -7,9 +7,11 @@ C++ Qt6 desktop image viewer. Cross-platform: Linux, macOS (primary dev/test), a
 ## Build
 
 ```bash
-cmake -B _build
-cmake --build _build
+./build
 ```
+
+On Linux, if Qt 6.11+ is not installed the script downloads it automatically via `fetch-linux-qt.sh`.
+On macOS, if Qt 6.11+ is not installed the script prints the `brew install qt` command and exits.
 
 If `compile_commands.json` is missing or out of date, run this to create it:
 
