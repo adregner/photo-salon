@@ -29,3 +29,9 @@ target_link_libraries(test_open_folder PRIVATE Qt6::Test photo-salon-lib)
 add_test(NAME test_open_folder COMMAND test_open_folder)
 set_tests_properties(test_open_folder PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(test_fullscreen test_fullscreen.cpp)
+target_link_libraries(test_fullscreen PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_fullscreen COMMAND test_fullscreen)
+set_tests_properties(test_fullscreen PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

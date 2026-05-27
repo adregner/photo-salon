@@ -26,6 +26,7 @@ signals:
     void helpVisibilityChanged(bool visible);
     void imagePathChanged(const QString &path);
     void folderBrowseRequested();
+    void fullscreenToggleRequested();
 
 protected:
     void showEvent(QShowEvent *event) override;

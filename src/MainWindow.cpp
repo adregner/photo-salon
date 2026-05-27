@@ -33,6 +33,8 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     m_helpOverlay->raise();
     connect(viewer, &ImageViewer::helpVisibilityChanged, m_helpOverlay, &QWidget::setVisible);
 
+    connect(viewer, &ImageViewer::fullscreenToggleRequested, this, &MainWindow::toggleFullscreen);
+
     connect(viewer, &ImageViewer::folderBrowseRequested, this, [this, viewer]() {
         QString currentPath = viewer->currentPath();
         if (currentPath.isEmpty()) return;
@@ -54,6 +56,15 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
         if (ok && !selected.isEmpty())
             viewer->loadImage(dir.absoluteFilePath(selected));
     });
+}
+
+void MainWindow::toggleFullscreen() {
+    if (windowState() & Qt::WindowFullScreen) {
+        setWindowState(m_windowStateBeforeFullscreen);
+    } else {
+        m_windowStateBeforeFullscreen = windowState();
+        showFullScreen();
+    }
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
