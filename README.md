@@ -6,13 +6,20 @@ A cross-platform minimalistic desktop photo viewing application to facilitate in
 
 ### Linux (Debian/Ubuntu)
 
+CMake and a C++ compiler are required. Qt 6.11+ will be fetched automatically by the build script if the system version is too old.
+
 ```bash
-sudo apt install qt6-base-dev qt6-base-dev-tools cmake g++
+sudo apt install cmake g++
 ```
 
 ### macOS
+
 - [Homebrew](https://brew.sh/)
-- Qt6 and CMake: `brew install qt cmake`
+- Qt 6.11+ and CMake:
+
+```bash
+brew install qt cmake
+```
 
 ### Windows
 - [Qt6](https://www.qt.io/download) via Qt Online Installer — select the MSVC 2022 64-bit component
@@ -24,16 +31,14 @@ sudo apt install qt6-base-dev qt6-base-dev-tools cmake g++
 ### Linux / macOS
 
 ```bash
-cmake -B _build
-cmake --build _build
+./build
 ```
 
-On macOS, if Qt6 is not found automatically:
+On Linux, if Qt 6.11+ is not found the script automatically downloads it via
+[`fetch-linux-qt.sh`](fetch-linux-qt.sh) and builds against it.
 
-```bash
-cmake -B _build -DCMAKE_PREFIX_PATH=$(brew --prefix qt)
-cmake --build _build
-```
+On macOS, if Qt 6.11+ is not found the script prints the Homebrew command to
+install it and exits.
 
 ### Windows (native)
 
