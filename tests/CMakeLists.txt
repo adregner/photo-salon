@@ -41,3 +41,9 @@ target_link_libraries(test_background_color PRIVATE Qt6::Test photo-salon-lib)
 add_test(NAME test_background_color COMMAND test_background_color)
 set_tests_properties(test_background_color PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(test_crop_tool test_crop_tool.cpp)
+target_link_libraries(test_crop_tool PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_crop_tool COMMAND test_crop_tool)
+set_tests_properties(test_crop_tool PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
