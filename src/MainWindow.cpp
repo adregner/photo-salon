@@ -5,9 +5,11 @@
 #include "ImageViewer.h"
 #include <QApplication>
 #include <QDir>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
 #include <QKeyEvent>
+#include <QMessageBox>
 #include <QResizeEvent>
 #include <QScreen>
 
@@ -53,6 +55,23 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     connect(m_colorPicker, &BackgroundColorPicker::greyChanged,
             viewer, &ImageViewer::setBackgroundGrey);
 
+    connect(viewer, &ImageViewer::saveRequested, this, [this, viewer]() {
+        QPixmap display = viewer->currentDisplayPixmap();
+        if (display.isNull()) return;
+
+        QString savePath = QFileDialog::getSaveFileName(
+            this,
+            QStringLiteral("Save Image"),
+            QFileInfo(viewer->currentPath()).dir().absoluteFilePath(
+                QFileInfo(viewer->currentPath()).baseName() + "-saved.jpg"),
+            QStringLiteral("JPEG Images (*.jpg *.jpeg);;PNG Images (*.png);;All Files (*)"));
+
+        if (savePath.isEmpty()) return;
+
+        if (!display.save(savePath))
+            QMessageBox::critical(this, "Save", QString("Failed to save: %1").arg(savePath));
+    });
+
     connect(viewer, &ImageViewer::folderBrowseRequested, this, [this, viewer]() {
         QString currentPath = viewer->currentPath();
         if (currentPath.isEmpty()) return;
@@ -93,6 +112,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             m_viewer->closeHelp();
             return true;
         }
+        if (m_viewer && m_viewer->cropMode()) {
+            m_viewer->setCropMode(false);
+            return true;
+        }
         if (windowState() & Qt::WindowFullScreen) {
             toggleFullscreen();
             return true;
@@ -100,9 +123,15 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         return false;
     }
 
-    // Forward all other key events to the viewer when something else has focus
+    // Forward all other key events to the viewer when something else has focus.
+    // Guard against re-entry: QGraphicsView::keyPressEvent forwards unhandled keys
+    // to the scene via sendEvent, which would trigger this filter again and recurse.
     if (m_viewer && obj != m_viewer && obj != m_viewer->viewport()) {
-        QCoreApplication::sendEvent(m_viewer, event);
+        if (!m_forwardingKeyEvent) {
+            m_forwardingKeyEvent = true;
+            QCoreApplication::sendEvent(m_viewer, event);
+            m_forwardingKeyEvent = false;
+        }
         return true;
     }
 
