@@ -14,7 +14,7 @@
 
 - **`BwConverter`** (`src/BwConverter.h/.cpp`) — stateless algorithm. Exposes:
   - `struct BwParams` — six `int` slider values (−100 to +100), one per hue band
-  - `QImage BwConverter::convert(const QImage &src, const BwParams &p)` — returns `QImage::Format_Grayscale8`
+  - `QImage BwConverter::convert(const QImage &src, const BwParams &p)` — returns `QImage::Format_Grayscale16`
   - `BwParams BwConverter::autoParams(const QImage &src)` — analyzes image, returns suggested params
 
 - **`BwPanel`** (`src/BwPanel.h/.cpp`) — floating overlay widget parented to `MainWindow`, same dark translucent rounded style as `BackgroundColorPicker`. Contains preset buttons, six labeled sliders, and a Compare toggle button.
@@ -22,9 +22,9 @@
 ### Modified classes
 
 - **`ImageViewer`** — two new key bindings (`W`, `\`) emit new signals; new public method `setDisplayPixmap()` lets `MainWindow` swap in the processed grayscale pixmap.
-- **`MainWindow`** — owns `BwPanel`, holds the pre-conversion `QImage` as `m_originalImage`, orchestrates the panel ↔ converter ↔ viewer loop.
+- **`MainWindow`** — owns `BwPanel`, holds the pre-conversion `QImage` as `m_originalImage` and `QPixmap` as `m_originalPixmap`, orchestrates the panel ↔ converter ↔ viewer loop. Conversion runs off the main thread via `QtConcurrent::run()` with a `QFutureWatcher` and a 50 ms debounce timer.
 - **`HelpOverlay`** — two new lines in the keyboard shortcut text.
-- **`CMakeLists.txt`** — four new source files added to `photo-salon-lib`.
+- **`CMakeLists.txt`** — four new source files added to `photo-salon-lib`; `Qt6::Concurrent` added to `target_link_libraries`.
 
 ### Data flow
 
@@ -32,30 +32,41 @@
 W key
   → ImageViewer emits bwPanelRequested()
   → MainWindow::onBwPanelRequested()
-      • captures viewer->pixmap().toImage() as m_originalImage
-      • runs BwConverter::convert(m_originalImage, panel->params())
-      • calls viewer->setDisplayPixmap(QPixmap::fromImage(result))
+      • captures viewer->pixmap() as m_originalPixmap and .toImage() as m_originalImage
+      • calls applyBwConversion() directly (no debounce for initial render)
       • positions and shows BwPanel
+
+applyBwConversion()
+  → if m_bwWatcher->isRunning(): m_bwDebounce->start() (retry after current job finishes)
+  → else: QtConcurrent::run(BwConverter::convert) → m_bwWatcher
+  → m_bwWatcher::finished (main thread):
+      m_lastBwImage  = result
+      m_lastBwPixmap = QPixmap::fromImage(result)
+      if m_bwActive && !m_bwComparing: viewer->setDisplayPixmap(m_lastBwPixmap)
 
 BwPanel slider changed
   → BwPanel emits paramsChanged(BwParams)
-  → MainWindow runs BwConverter::convert() → viewer->setDisplayPixmap()
+  → MainWindow: m_bwDebounce->start() (50 ms, restarts on each change)
+  → timer fires → applyBwConversion()
 
 BwPanel Auto clicked
   → BwPanel emits autoRequested()
-  → MainWindow runs BwConverter::autoParams(m_originalImage)
-  → MainWindow calls panel->setParams(result)  (triggers paramsChanged → re-render)
+  → MainWindow: QtConcurrent::run(BwConverter::autoParams) → temp QFutureWatcher<BwParams>
+  → watcher::finished (main thread): panel->setParams(result) → triggers paramsChanged → debounce
 
 \ key
   → ImageViewer emits bwCompareRequested()
   → MainWindow::toggleBwCompare()
-      • if comparing: viewer->setDisplayPixmap(QPixmap::fromImage(bwImage))
-      • else:         viewer->setDisplayPixmap(QPixmap::fromImage(m_originalImage))
+      • m_bwComparing = !m_bwComparing
+      • QSignalBlocker syncs m_compareBtn checked state
+      • if comparing: viewer->setDisplayPixmap(m_originalPixmap)
+      • else:         viewer->setDisplayPixmap(m_lastBwPixmap)
 
 Escape (while panel visible)
   → MainWindow::deactivateBw()
-      • viewer->setDisplayPixmap(QPixmap::fromImage(m_originalImage))
-      • m_bwActive = false, m_originalImage = {}
+      • m_bwActive = false (in-flight conversion result silently discarded by watcher)
+      • viewer->setDisplayPixmap(m_originalPixmap)
+      • clears all images/pixmaps, stops debounce
       • hide panel
 
 imagePathChanged signal (navigation / new load)
@@ -68,21 +79,26 @@ imagePathChanged signal (navigation / new load)
 
 ### `BwConverter::convert()`
 
-**Step 1 — normalize input:**
+**Step 1 — normalize to linear sRGB float (one pass; handles any source color space including HDR and CMYK with embedded ICC profile):**
 ```cpp
-QImage img = src.convertToFormat(QImage::Format_RGB32);
+QColorSpace srcSpace = src.colorSpace().isValid()
+    ? src.colorSpace() : QColorSpace(QColorSpace::SRgb);
+QColorTransform toLinear =
+    srcSpace.transformationToColorSpace(QColorSpace(QColorSpace::SRgbLinear));
+QImage img = src.colorTransformed(toLinear, QImage::Format_RGBX32FPx4);
 ```
 
 **Step 2 — per pixel:**
 
-For each pixel with 8-bit channels R, G, B (0–255):
+For each pixel — `r`, `g`, `b` are `float` values in `[0, 1]` read directly from `Format_RGBX32FPx4`, already in linear light:
 
 ```
-r = R / 255.0f
-g = G / 255.0f
-b = B / 255.0f
+// srcLine = reinterpret_cast<const float *>(img.constScanLine(y))
+r = srcLine[x * 4 + 0]
+g = srcLine[x * 4 + 1]
+b = srcLine[x * 4 + 2]
 
-// BT.709 luminosity (sRGB baseline)
+// BT.709 luminosity — correct on linear values
 lum = 0.2126·r + 0.7152·g + 0.0722·b
 
 // HSV saturation (colorfulness factor; 0 for gray pixels)
@@ -107,14 +123,16 @@ adj  = bands[seg]·(1−t) + bands[next]·t   // interpolated adjustment
 
 // Final output
 output = clamp(lum + (adj / 100.0f) · sat_hsv, 0.0f, 1.0f)
-out_pixel = round(output · 255)
+out_pixel = round(output · 65535)   // uint16_t
 ```
 
 The saturation multiplier guarantees that neutral-gray pixels (sat_hsv = 0) are always converted by plain BT.709 luminosity, regardless of slider values.
 
-**Output format:** `QImage::Format_Grayscale8`
+**Output format:** `QImage::Format_Grayscale16`
 
 ### `BwConverter::autoParams()`
+
+Uses the same Step 1 linear-float normalization as `convert()`.
 
 For each of the 6 hue bands:
 1. Iterate all pixels. A pixel "belongs" to band i if `floor(hue/60) % 6 == i` (dominant band, no interpolation for band assignment).
@@ -153,10 +171,10 @@ Rationale: each preset simulates placing the corresponding Wratten gelatin filte
 - **Create:** `tests/test_bw_converter.cpp`
 - **Modify:** `src/ImageViewer.h` — add signals `bwPanelRequested()`, `bwCompareRequested()`; add public method `setDisplayPixmap()`
 - **Modify:** `src/ImageViewer.cpp` — add `W` and `\` key press cases
-- **Modify:** `src/MainWindow.h` — add `BwPanel *m_bwPanel`, `QImage m_originalImage`, `bool m_bwActive`, `bool m_bwComparing`, `QImage m_lastBwImage`; add private methods `onBwPanelRequested()`, `applyBwConversion()`, `toggleBwCompare()`, `deactivateBw()`
+- **Modify:** `src/MainWindow.h` — add `BwPanel *m_bwPanel`, `QImage m_originalImage`, `QPixmap m_originalPixmap`, `QImage m_lastBwImage`, `QPixmap m_lastBwPixmap`, `bool m_bwActive`, `bool m_bwComparing`, `QFutureWatcher<QImage> *m_bwWatcher`, `QTimer *m_bwDebounce`; add private methods `onBwPanelRequested()`, `applyBwConversion()`, `toggleBwCompare()`, `deactivateBw()`
 - **Modify:** `src/MainWindow.cpp` — implement all wiring
 - **Modify:** `src/HelpOverlay.cpp` — add `W` and `\` shortcut lines
-- **Modify:** `CMakeLists.txt` — add four new source files to `photo-salon-lib`
+- **Modify:** `CMakeLists.txt` — add four new source files to `photo-salon-lib`; add `Qt6::Concurrent` to `target_link_libraries`
 
 ---
 
@@ -172,6 +190,17 @@ In the `add_library(photo-salon-lib STATIC ...)` block, add:
 ```cmake
     src/BwConverter.cpp
     src/BwPanel.cpp
+```
+
+- [ ] **Step 1b: Add `Qt6::Concurrent` to `target_link_libraries` in `CMakeLists.txt`**
+
+Change:
+```cmake
+target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets)
+```
+to:
+```cmake
+target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets Qt6::Concurrent)
 ```
 
 - [ ] **Step 2: Append to `tests/CMakeLists.txt`**
@@ -227,6 +256,7 @@ namespace BwConverter {
 #include "BwConverter.h"
 #include <algorithm>
 #include <cmath>
+#include <QColorSpace>
 
 namespace {
 
@@ -261,24 +291,31 @@ float hueAdjustment(float hue, const BwParams &p) {
     return bands[seg] * (1.0f - t) + bands[next] * t;
 }
 
+QImage toLinearFloat(const QImage &src) {
+    QColorSpace srcSpace = src.colorSpace().isValid()
+        ? src.colorSpace() : QColorSpace(QColorSpace::SRgb);
+    QColorTransform toLinear =
+        srcSpace.transformationToColorSpace(QColorSpace(QColorSpace::SRgbLinear));
+    return src.colorTransformed(toLinear, QImage::Format_RGBX32FPx4);
+}
+
 } // namespace
 
 QImage BwConverter::convert(const QImage &src, const BwParams &params) {
-    QImage img = src.convertToFormat(QImage::Format_RGB32);
-    QImage out(img.size(), QImage::Format_Grayscale8);
+    QImage img = toLinearFloat(src);
+    QImage out(img.size(), QImage::Format_Grayscale16);
 
     const int w = img.width();
     const int h = img.height();
 
     for (int y = 0; y < h; ++y) {
-        const QRgb *srcLine = reinterpret_cast<const QRgb *>(img.constScanLine(y));
-        uchar      *dstLine = out.scanLine(y);
+        const float *srcLine = reinterpret_cast<const float *>(img.constScanLine(y));
+        uint16_t    *dstLine = reinterpret_cast<uint16_t *>(out.scanLine(y));
 
         for (int x = 0; x < w; ++x) {
-            QRgb  px = srcLine[x];
-            float r  = qRed(px)   / 255.0f;
-            float g  = qGreen(px) / 255.0f;
-            float b  = qBlue(px)  / 255.0f;
+            float r = srcLine[x * 4 + 0];
+            float g = srcLine[x * 4 + 1];
+            float b = srcLine[x * 4 + 2];
 
             float lum = luminosity(r, g, b);
             float hue, sat;
@@ -286,7 +323,7 @@ QImage BwConverter::convert(const QImage &src, const BwParams &params) {
 
             float adj    = hueAdjustment(hue, params) / 100.0f;
             float output = std::clamp(lum + adj * sat, 0.0f, 1.0f);
-            dstLine[x]   = static_cast<uchar>(output * 255.0f + 0.5f);
+            dstLine[x]   = static_cast<uint16_t>(output * 65535.0f + 0.5f);
         }
     }
 
@@ -294,7 +331,7 @@ QImage BwConverter::convert(const QImage &src, const BwParams &params) {
 }
 
 BwParams BwConverter::autoParams(const QImage &src) {
-    QImage img = src.convertToFormat(QImage::Format_RGB32);
+    QImage img = toLinearFloat(src);
 
     double sumLumSat[6] = {};
     double sumSat[6]    = {};
@@ -303,18 +340,17 @@ BwParams BwConverter::autoParams(const QImage &src) {
     const int h = img.height();
 
     for (int y = 0; y < h; ++y) {
-        const QRgb *line = reinterpret_cast<const QRgb *>(img.constScanLine(y));
+        const float *line = reinterpret_cast<const float *>(img.constScanLine(y));
         for (int x = 0; x < w; ++x) {
-            QRgb  px = line[x];
-            float r  = qRed(px)   / 255.0f;
-            float g  = qGreen(px) / 255.0f;
-            float b  = qBlue(px)  / 255.0f;
+            float r = line[x * 4 + 0];
+            float g = line[x * 4 + 1];
+            float b = line[x * 4 + 2];
 
             float lum = luminosity(r, g, b);
             float hue, sat;
             rgbToHSV(r, g, b, hue, sat);
 
-            int band      = (int)(hue / 60.0f) % 6;
+            int band        = (int)(hue / 60.0f) % 6;
             sumLumSat[band] += (double)(lum * sat);
             sumSat[band]    += (double)sat;
         }
@@ -359,7 +395,7 @@ private slots:
     void grayPixelUnaffectedBySliders();
     void positiveSlidersLightenMatchingHue();
     void negativeSlidersBarkenMatchingHue();
-    void outputFormatIsGrayscale8();
+    void outputFormatIsGrayscale16();
     void autoParamsReturnValidRange();
     void autoParamsSkipAbsentBands();
     void convertHandlesRGB32AndRGB888Input();
@@ -371,15 +407,19 @@ static QImage makeSolid(int w, int h, QRgb color) {
     return img;
 }
 
+static int readGray16(const QImage &img, int x, int y) {
+    return (int)reinterpret_cast<const uint16_t *>(img.constScanLine(y))[x];
+}
+
 void BwConverterTest::neutralParamsMatchBT709Luminosity() {
-    // Pure red pixel: R=255, G=0, B=0
-    // BT.709 lum = 0.2126 → round(0.2126 * 255) = 54
+    // Pure red pixel: sRGB (255,0,0) → linear (1.0,0,0)
+    // BT.709 lum = 0.2126 → round(0.2126 * 65535) = 13933
     QImage img = makeSolid(1, 1, qRgb(255, 0, 0));
     BwParams p;
     QImage out = BwConverter::convert(img, p);
-    QCOMPARE(out.format(), QImage::Format_Grayscale8);
-    int val = (int)(uchar)out.constScanLine(0)[0];
-    QVERIFY2(qAbs(val - 54) <= 1, qPrintable(QString("expected ~54 got %1").arg(val)));
+    QCOMPARE(out.format(), QImage::Format_Grayscale16);
+    int val = readGray16(out, 0, 0);
+    QVERIFY2(qAbs(val - 13933) <= 2, qPrintable(QString("expected ~13933 got %1").arg(val)));
 }
 
 void BwConverterTest::grayPixelUnaffectedBySliders() {
@@ -389,8 +429,8 @@ void BwConverterTest::grayPixelUnaffectedBySliders() {
     p.reds = 100; p.blues = -100; p.greens = 50;
     QImage neutral; { BwParams n; neutral = BwConverter::convert(img, n); }
     QImage adjusted = BwConverter::convert(img, p);
-    QCOMPARE((int)(uchar)neutral.constScanLine(0)[0],
-             (int)(uchar)adjusted.constScanLine(0)[0]);
+    QCOMPARE(readGray16(neutral,  0, 0),
+             readGray16(adjusted, 0, 0));
 }
 
 void BwConverterTest::positiveSlidersLightenMatchingHue() {
@@ -400,8 +440,8 @@ void BwConverterTest::positiveSlidersLightenMatchingHue() {
     boosted.greens = 80;
     QImage outN = BwConverter::convert(img, neutral);
     QImage outB = BwConverter::convert(img, boosted);
-    int vN = (int)(uchar)outN.constScanLine(0)[0];
-    int vB = (int)(uchar)outB.constScanLine(0)[0];
+    int vN = readGray16(outN, 0, 0);
+    int vB = readGray16(outB, 0, 0);
     QVERIFY2(vB > vN, qPrintable(QString("expected boosted (%1) > neutral (%2)").arg(vB).arg(vN)));
 }
 
@@ -412,15 +452,15 @@ void BwConverterTest::negativeSlidersBarkenMatchingHue() {
     darkened.blues = -80;
     QImage outN = BwConverter::convert(img, neutral);
     QImage outD = BwConverter::convert(img, darkened);
-    int vN = (int)(uchar)outN.constScanLine(0)[0];
-    int vD = (int)(uchar)outD.constScanLine(0)[0];
+    int vN = readGray16(outN, 0, 0);
+    int vD = readGray16(outD, 0, 0);
     QVERIFY2(vD < vN, qPrintable(QString("expected darkened (%1) < neutral (%2)").arg(vD).arg(vN)));
 }
 
-void BwConverterTest::outputFormatIsGrayscale8() {
+void BwConverterTest::outputFormatIsGrayscale16() {
     QImage img = makeSolid(10, 10, qRgb(100, 150, 200));
     QImage out = BwConverter::convert(img, BwParams{});
-    QCOMPARE(out.format(), QImage::Format_Grayscale8);
+    QCOMPARE(out.format(), QImage::Format_Grayscale16);
     QCOMPARE(out.size(), img.size());
 }
 
@@ -461,8 +501,8 @@ void BwConverterTest::convertHandlesRGB32AndRGB888Input() {
     QImage out888 = BwConverter::convert(rgb888, BwParams{});
 
     // Both should produce the same grayscale value
-    QCOMPARE((int)(uchar)out32.constScanLine(0)[0],
-             (int)(uchar)out888.constScanLine(0)[0]);
+    QCOMPARE(readGray16(out32,  0, 0),
+             readGray16(out888, 0, 0));
 }
 
 int main(int argc, char *argv[]) {
@@ -487,7 +527,7 @@ PASS   : BwConverterTest::neutralParamsMatchBT709Luminosity()
 PASS   : BwConverterTest::grayPixelUnaffectedBySliders()
 PASS   : BwConverterTest::positiveSlidersLightenMatchingHue()
 PASS   : BwConverterTest::negativeSlidersBarkenMatchingHue()
-PASS   : BwConverterTest::outputFormatIsGrayscale8()
+PASS   : BwConverterTest::outputFormatIsGrayscale16()
 PASS   : BwConverterTest::autoParamsReturnValidRange()
 PASS   : BwConverterTest::autoParamsSkipAbsentBands()
 PASS   : BwConverterTest::convertHandlesRGB32AndRGB888Input()
@@ -576,8 +616,9 @@ class BwPanel : public QWidget {
 public:
     explicit BwPanel(QWidget *parent = nullptr);
 
-    BwParams params() const;
-    void setParams(const BwParams &p);
+    BwParams    params() const;
+    void        setParams(const BwParams &p);
+    QPushButton *compareButton() const { return m_compareBtn; }
 
 signals:
     void paramsChanged(const BwParams &p);
@@ -722,18 +763,24 @@ git commit -m "feat: add W and \\ key bindings to ImageViewer for B&W panel"
 
 - [ ] **Step 1: Update `src/MainWindow.h`**
 
-Add includes at top:
+Add forward declarations / includes at top:
 ```cpp
+#include <QFutureWatcher>
 class BwPanel;
+class QTimer;
 ```
 
 Add to private members:
 ```cpp
-BwPanel   *m_bwPanel       = nullptr;
-QImage     m_originalImage;
-QImage     m_lastBwImage;
-bool       m_bwActive      = false;
-bool       m_bwComparing   = false;
+BwPanel                *m_bwPanel       = nullptr;
+QImage                  m_originalImage;
+QPixmap                 m_originalPixmap;
+QImage                  m_lastBwImage;
+QPixmap                 m_lastBwPixmap;
+bool                    m_bwActive      = false;
+bool                    m_bwComparing   = false;
+QFutureWatcher<QImage> *m_bwWatcher     = nullptr;
+QTimer                 *m_bwDebounce    = nullptr;
 ```
 
 Add private methods:
@@ -746,38 +793,60 @@ void deactivateBw();
 
 - [ ] **Step 2: Update `src/MainWindow.cpp`**
 
-Add include at top:
+Add includes at top:
 ```cpp
 #include "BwConverter.h"
 #include "BwPanel.h"
+#include <QtConcurrent/QtConcurrent>
+#include <QFutureWatcher>
+#include <QTimer>
 ```
 
 **In the constructor**, after the `m_colorPicker` block, add:
 
 ```cpp
+m_bwDebounce = new QTimer(this);
+m_bwDebounce->setSingleShot(true);
+m_bwDebounce->setInterval(50);
+connect(m_bwDebounce, &QTimer::timeout, this, &MainWindow::applyBwConversion);
+
+m_bwWatcher = new QFutureWatcher<QImage>(this);
+connect(m_bwWatcher, &QFutureWatcher<QImage>::finished, this, [this]() {
+    m_lastBwImage  = m_bwWatcher->result();
+    m_lastBwPixmap = QPixmap::fromImage(m_lastBwImage);
+    if (m_bwActive && !m_bwComparing)
+        m_viewer->setDisplayPixmap(m_lastBwPixmap);
+});
+
 m_bwPanel = new BwPanel(this);
 m_bwPanel->hide();
 
-connect(viewer, &ImageViewer::bwPanelRequested,  this, &MainWindow::onBwPanelRequested);
-connect(viewer, &ImageViewer::bwCompareRequested, this, &MainWindow::toggleBwCompare);
+connect(viewer, &ImageViewer::bwPanelRequested,   this, &MainWindow::onBwPanelRequested);
+connect(viewer, &ImageViewer::bwCompareRequested,  this, &MainWindow::toggleBwCompare);
 
 connect(m_bwPanel, &BwPanel::paramsChanged, this, [this](const BwParams &) {
     if (m_bwActive && !m_bwComparing)
-        applyBwConversion();
+        m_bwDebounce->start();
 });
 
 connect(m_bwPanel, &BwPanel::autoRequested, this, [this]() {
     if (m_originalImage.isNull()) return;
-    m_bwPanel->setParams(BwConverter::autoParams(m_originalImage));
+    QImage src = m_originalImage;
+    auto *watcher = new QFutureWatcher<BwParams>(this);
+    connect(watcher, &QFutureWatcher<BwParams>::finished, this, [this, watcher]() {
+        m_bwPanel->setParams(watcher->result());
+        watcher->deleteLater();
+    });
+    watcher->setFuture(QtConcurrent::run([src]() { return BwConverter::autoParams(src); }));
 });
 
 connect(m_bwPanel, &BwPanel::compareToggled, this, [this](bool showOriginal) {
     m_bwComparing = showOriginal;
     if (!m_bwActive || m_originalImage.isNull()) return;
     if (showOriginal)
-        m_viewer->setDisplayPixmap(QPixmap::fromImage(m_originalImage));
-    else
-        m_viewer->setDisplayPixmap(QPixmap::fromImage(m_lastBwImage));
+        m_viewer->setDisplayPixmap(m_originalPixmap);
+    else if (!m_lastBwPixmap.isNull())
+        m_viewer->setDisplayPixmap(m_lastBwPixmap);
 });
 
 // Reset B&W state when a new image loads
@@ -791,7 +860,6 @@ connect(viewer, &ImageViewer::imagePathChanged, this, [this]() {
 ```cpp
 void MainWindow::onBwPanelRequested() {
     if (m_bwPanel->isVisible()) {
-        // Panel already open — just raise it
         m_bwPanel->raise();
         m_bwPanel->setFocus();
         return;
@@ -800,12 +868,12 @@ void MainWindow::onBwPanelRequested() {
     if (!m_bwActive) {
         QPixmap current = m_viewer->pixmap();
         if (current.isNull()) return;
-        m_originalImage = current.toImage();
+        m_originalPixmap = current;
+        m_originalImage  = current.toImage();
         m_bwActive = true;
         applyBwConversion();
     }
 
-    // Position: lower-left, 10px from edges
     int x = 10;
     int y = height() - m_bwPanel->sizeHint().height() - 10;
     m_bwPanel->move(x, y);
@@ -820,8 +888,14 @@ void MainWindow::onBwPanelRequested() {
 ```cpp
 void MainWindow::applyBwConversion() {
     if (!m_bwActive || m_originalImage.isNull()) return;
-    m_lastBwImage = BwConverter::convert(m_originalImage, m_bwPanel->params());
-    m_viewer->setDisplayPixmap(QPixmap::fromImage(m_lastBwImage));
+    if (m_bwWatcher->isRunning()) {
+        m_bwDebounce->start();  // retry once current job finishes
+        return;
+    }
+    QImage   src = m_originalImage;
+    BwParams p   = m_bwPanel->params();
+    m_bwWatcher->setFuture(
+        QtConcurrent::run([src, p]() { return BwConverter::convert(src, p); }));
 }
 ```
 
@@ -831,15 +905,14 @@ void MainWindow::applyBwConversion() {
 void MainWindow::toggleBwCompare() {
     if (!m_bwActive || m_originalImage.isNull()) return;
     m_bwComparing = !m_bwComparing;
-
-    // Keep the Compare button in the panel in sync
-    // (BwPanel's compareToggled signal will re-enter here via the connection above,
-    //  but since we're toggling the button programmatically we use blockSignals)
-    // Simplest: just swap the pixmap directly without touching the button
+    {
+        QSignalBlocker blocker(m_bwPanel->compareButton());
+        m_bwPanel->compareButton()->setChecked(m_bwComparing);
+    }
     if (m_bwComparing)
-        m_viewer->setDisplayPixmap(QPixmap::fromImage(m_originalImage));
-    else
-        m_viewer->setDisplayPixmap(QPixmap::fromImage(m_lastBwImage));
+        m_viewer->setDisplayPixmap(m_originalPixmap);
+    else if (!m_lastBwPixmap.isNull())
+        m_viewer->setDisplayPixmap(m_lastBwPixmap);
 }
 ```
 
@@ -849,13 +922,17 @@ void MainWindow::toggleBwCompare() {
 void MainWindow::deactivateBw() {
     if (!m_bwActive && m_originalImage.isNull()) return;
 
-    if (!m_originalImage.isNull())
-        m_viewer->setDisplayPixmap(QPixmap::fromImage(m_originalImage));
-
-    m_bwActive    = false;
+    m_bwActive    = false;  // cleared first — watcher::finished checks this before updating display
     m_bwComparing = false;
-    m_originalImage = {};
-    m_lastBwImage   = {};
+    m_bwDebounce->stop();
+
+    if (!m_originalPixmap.isNull())
+        m_viewer->setDisplayPixmap(m_originalPixmap);
+
+    m_originalImage  = {};
+    m_originalPixmap = {};
+    m_lastBwImage    = {};
+    m_lastBwPixmap   = {};
 
     if (m_bwPanel)
         m_bwPanel->hide();
@@ -903,7 +980,7 @@ Expected: all tests pass (including pre-existing tests).
 
 ```bash
 git add src/MainWindow.h src/MainWindow.cpp
-git commit -m "feat: wire B&W panel into MainWindow with compare and revert"
+git commit -m "feat: wire B&W panel into MainWindow with async conversion and compare"
 ```
 
 ---
@@ -950,18 +1027,32 @@ Expected: all tests pass, zero build warnings.
 - [ ] **Step 2: Push**
 
 ```bash
-git push -u origin claude/busy-mccarthy-Bn3ih
+git push -u origin claude/sleepy-galileo-VNVRZ
 ```
 
 ---
 
 ## Notes
 
-### Interaction with crop mode
+### Async conversion and thread safety
 
-`loadImage()` is called when the user navigates to a new image (arrow keys) or `Tab`-picks a file. It emits `imagePathChanged`, which `MainWindow` connects to `deactivateBw()`. This means crop mode and B&W mode cannot be active simultaneously in a conflicting way — navigating to a new image always resets B&W state cleanly.
+`BwConverter::convert()` and `autoParams()` run on a `QtConcurrent` thread pool thread. Both functions are pure (no shared mutable state) and capture their inputs by value, so they are thread-safe. The `QFutureWatcher::finished` signal is delivered on the main thread via Qt's event loop.
 
-If the user enters crop mode while B&W is active, the crop tool calls `loadImage`-equivalent logic internally that reloads from disk. After exiting crop mode, `m_pixmapItem` contains the (possibly cropped) original-color image. B&W state will have been cleared by `imagePathChanged`. The user must press W again to re-apply B&W to the cropped result. This is the correct behavior — the B&W conversion is a display transform on top of whatever is currently loaded, not a persistent edit.
+If a slider change arrives while a conversion is already running, `applyBwConversion()` detects `m_bwWatcher->isRunning()` and restarts the 50 ms debounce timer rather than queuing a second future. This means at most one conversion is in flight at any time, and the result is always based on the slider values current at the time of the last fire.
+
+`deactivateBw()` sets `m_bwActive = false` before returning. Any in-flight conversion will complete normally, but its `finished` handler checks `m_bwActive` before updating the display, so the result is silently discarded.
+
+### Color space handling
+
+`BwConverter::toLinearFloat()` uses `QColorSpace::transformationToColorSpace(QColorSpace::SRgbLinear)` (Qt 6.8) combined with the 3-argument `colorTransformed(transform, Format_RGBX32FPx4)` overload to convert format and color space in a single pass. This correctly handles:
+- Standard sRGB JPEGs (most camera output)
+- Wide-gamut sources (Display P3, Adobe RGB) — hue angles are computed from perceptually correct linear values
+- HDR sources (Bt2100Pq, Bt2020) — tone-mapped to linear sRGB before processing
+- CMYK JPEGs with embedded ICC profiles — Qt 6.8's ICC A2B lut support handles the CMYK→linear sRGB mapping via the embedded profile
+
+Images without an embedded color space are assumed to be sRGB.
+
+The BT.709 luminance coefficients (0.2126 R + 0.7152 G + 0.0722 B) are defined for linear light and are applied correctly here. The 16-bit output (`Format_Grayscale16`) preserves the precision of the linear computation.
 
 ### `setDisplayPixmap` does not affect `m_nativeSize` or `m_imagePath`
 
@@ -969,4 +1060,10 @@ The method only touches `m_pixmapItem->setPixmap()`. This means `currentPath()`,
 
 ### Compare button vs `\` key
 
-Both the `\` key (via `bwCompareRequested` signal) and the Compare toggle button in `BwPanel` can trigger comparison mode. The `\` key directly calls `toggleBwCompare()` which flips `m_bwComparing` and swaps the pixmap, but does *not* update `m_compareBtn`'s checked state. The Compare button, when clicked, emits `compareToggled(bool)` which also swaps the pixmap via its own connection. These two paths are intentionally independent — the `\` key is a quick non-UI shortcut and the button is panel-only. There is no requirement to keep them visually synchronized, and attempting to do so risks signal recursion.
+Both the `\` key (via `bwCompareRequested` signal) and the Compare toggle button in `BwPanel` trigger comparison mode. `toggleBwCompare()` uses `QSignalBlocker` on `m_compareBtn` to keep the button's checked state in sync with the keyboard shortcut without risk of signal recursion.
+
+### Interaction with crop mode
+
+`loadImage()` is called when the user navigates to a new image (arrow keys) or `Tab`-picks a file. It emits `imagePathChanged`, which `MainWindow` connects to `deactivateBw()`. This means crop mode and B&W mode cannot be active simultaneously in a conflicting way — navigating to a new image always resets B&W state cleanly.
+
+If the user enters crop mode while B&W is active, the crop tool calls `loadImage`-equivalent logic internally that reloads from disk. After exiting crop mode, `m_pixmapItem` contains the (possibly cropped) original-color image. B&W state will have been cleared by `imagePathChanged`. The user must press W again to re-apply B&W to the cropped result. This is the correct behavior — the B&W conversion is a display transform on top of whatever is currently loaded, not a persistent edit.
