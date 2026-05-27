@@ -1,8 +1,11 @@
 #include "MainWindow.h"
 #include "HelpOverlay.h"
+#include "ImageFormats.h"
 #include "ImageViewer.h"
+#include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QInputDialog>
 #include <QResizeEvent>
 #include <QScreen>
 
@@ -29,6 +32,28 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     m_helpOverlay->resize(size());
     m_helpOverlay->raise();
     connect(viewer, &ImageViewer::helpVisibilityChanged, m_helpOverlay, &QWidget::setVisible);
+
+    connect(viewer, &ImageViewer::folderBrowseRequested, this, [this, viewer]() {
+        QString currentPath = viewer->currentPath();
+        if (currentPath.isEmpty()) return;
+
+        QDir dir = QFileInfo(currentPath).absoluteDir();
+        QStringList files = dir.entryList(supportedExtensions(), QDir::Files, QDir::Name);
+        if (files.isEmpty()) return;
+
+        int current = files.indexOf(QFileInfo(currentPath).fileName());
+        bool ok = false;
+        QString selected = QInputDialog::getItem(
+            this,
+            QStringLiteral("Open Image"),
+            QStringLiteral("Select image:"),
+            files,
+            qMax(0, current),
+            /*editable=*/false,
+            &ok);
+        if (ok && !selected.isEmpty())
+            viewer->loadImage(dir.absoluteFilePath(selected));
+    });
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
