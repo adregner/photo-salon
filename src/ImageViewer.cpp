@@ -115,6 +115,10 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         fitImage();
         event->accept();
         break;
+    case Qt::Key_Tab:
+        emit folderBrowseRequested();
+        event->accept();
+        break;
     default:
         QGraphicsView::keyPressEvent(event);
         break;

@@ -25,6 +25,7 @@ public:
 signals:
     void helpVisibilityChanged(bool visible);
     void imagePathChanged(const QString &path);
+    void folderBrowseRequested();
 
 protected:
     void showEvent(QShowEvent *event) override;
