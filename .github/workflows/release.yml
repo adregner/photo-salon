@@ -20,7 +20,8 @@ on:
     types: [created]
 
 jobs:
-  build-sign-upload:
+  # Cross-compile on Linux (fast, cheap). Signing is skipped here — no Azure vars set.
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -31,7 +32,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y cmake clang-18 lld-18 llvm-18
 
-      # /opt is root-owned; create and hand off to the runner before the cache step
+      # /opt is root-owned; hand off to the runner before the cache step
       # so actions/cache can restore into it without sudo.
       - name: Prepare Qt host directory
         run: |
@@ -62,41 +63,45 @@ jobs:
             windows/qt-6.11
           key: windows-cross-deps-${{ hashFiles('fetch-windows-deps.sh') }}
 
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Install jsign
-        run: |
-          JSIGN_VER=$(curl -fsSL https://api.github.com/repos/ebourg/jsign/releases/latest \
-            | jq -r .tag_name)
-          curl -fsSLo /tmp/jsign.jar \
-            "https://github.com/ebourg/jsign/releases/download/${JSIGN_VER}/jsign-${JSIGN_VER}.jar"
-          printf '#!/bin/sh\nexec java -jar /tmp/jsign.jar "$@"\n' \
-            | sudo tee /usr/local/bin/jsign > /dev/null
-          sudo chmod +x /usr/local/bin/jsign
-
-      - name: Log in to Azure
-        run: |
-          az login --service-principal \
-            --tenant   "$AZURE_TENANT_ID" \
-            --username "$AZURE_CLIENT_ID" \
-            --password "$AZURE_CLIENT_SECRET"
-        env:
-          AZURE_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID:     ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-
-      - name: Build and sign
-        env:
-          AZURE_TRUSTED_SIGNING_ENDPOINT:     ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
-          AZURE_TRUSTED_SIGNING_ACCOUNT:      ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT }}
-          AZURE_TRUSTED_SIGNING_CERT_PROFILE: ${{ vars.AZURE_TRUSTED_SIGNING_CERT_PROFILE }}
+      - name: Build
         run: ./build-windows.sh
 
+      - name: Upload unsigned exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: photo-salon-unsigned
+          path: _build_win/photo-salon.exe
+          retention-days: 1
+
+  # Sign with native Windows tools (signtool.exe + Azure Trusted Signing DLIB)
+  # and attach the result to the release.
+  sign-and-release:
+    runs-on: windows-latest
+    needs: build
+
+    steps:
+      - name: Download unsigned exe
+        uses: actions/download-artifact@v4
+        with:
+          name: photo-salon-unsigned
+          path: to-sign
+
+      - name: Sign with Azure Trusted Signing
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id:              ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id:              ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret:          ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint:                     https://${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name:     ${{ vars.AZURE_TRUSTED_SIGNING_CERT_PROFILE }}
+          files-folder:                 to-sign
+          files-folder-filter:          exe
+          file-digest:                  SHA256
+          timestamp-rfc3161:            http://timestamp.acs.microsoft.com
+          timestamp-digest:             SHA256
+
       - name: Upload to release
-        run: gh release upload "${{ github.ref_name }}" _build_win/photo-salon.exe --clobber
+        run: gh release upload "${{ github.ref_name }}" to-sign/photo-salon.exe --clobber
         env:
           GH_TOKEN: ${{ github.token }}
