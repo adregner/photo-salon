@@ -6,14 +6,26 @@ set(CMAKE_SYSTEM_PROCESSOR AMD64)
 set(CMAKE_USER_MAKE_RULES_OVERRIDE
     "${CMAKE_CURRENT_LIST_DIR}/../WinCrossLinkRules.cmake" CACHE FILEPATH "")
 
-set(_llvm "/opt/homebrew/opt/llvm")
 set(_cmake_dir "${CMAKE_CURRENT_LIST_DIR}/..")
 
 # clang-cl wrapper handles: target, C++17, and all Windows/MSVC include paths
 set(CMAKE_C_COMPILER   "${_cmake_dir}/clang-cl-win.sh")
 set(CMAKE_CXX_COMPILER "${_cmake_dir}/clang-cl-win.sh")
-set(CMAKE_AR           "${_llvm}/bin/llvm-lib")
-set(CMAKE_LINKER       "/opt/homebrew/opt/lld@21/bin/lld-link")
+
+# Platform-specific LLVM tool locations and Qt host path
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+    set(_llvm_bin "/opt/homebrew/opt/llvm/bin")
+    set(CMAKE_LINKER "/opt/homebrew/opt/lld@21/bin/lld-link")
+    set(QT_HOST_PATH          "/opt/homebrew/opt/qt"            CACHE PATH "")
+    set(QT_HOST_PATH_CMAKE_DIR "/opt/homebrew/opt/qt/lib/cmake" CACHE PATH "")
+else()
+    # Linux CI — LLVM 18 from apt (clang-18 lld-18 llvm-18)
+    set(_llvm_bin "/usr/lib/llvm-18/bin")
+    set(CMAKE_LINKER "${_llvm_bin}/lld-link")
+    set(QT_HOST_PATH          "/opt/qt-linux/6.11.1/gcc_64"            CACHE PATH "")
+    set(QT_HOST_PATH_CMAKE_DIR "/opt/qt-linux/6.11.1/gcc_64/lib/cmake" CACHE PATH "")
+endif()
+set(CMAKE_AR "${_llvm_bin}/llvm-lib")
 
 # Prevent CMake from trying to run cross-compiled test executables on the host
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -23,10 +35,6 @@ get_filename_component(_project_root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(_qt_prefix "${_project_root}/windows/qt-6.11/x64")
 set(CMAKE_PREFIX_PATH    "${_qt_prefix}")
 set(CMAKE_FIND_ROOT_PATH "${_qt_prefix}")
-
-# Host Qt (macOS Homebrew) provides moc/rcc/etc. — .exe files can't run on macOS
-set(QT_HOST_PATH          "/opt/homebrew/opt/qt"            CACHE PATH "")
-set(QT_HOST_PATH_CMAKE_DIR "/opt/homebrew/opt/qt/lib/cmake" CACHE PATH "")
 
 # lld-link flags: Windows SDK UM libraries, MSVC runtime libs, x64 machine, subsystem
 set(_win_sdk_um   "${_project_root}/windows/sdk/lib/um")
