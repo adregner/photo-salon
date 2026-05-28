@@ -36,6 +36,7 @@ void ImageViewer::loadImage(const QString &path) {
     m_cropRect = QRectF();
     m_cropMode = false;
     m_activeHandle = CropHandle::None;
+    m_cropBasePixmap = {};
 
     QPixmap pixmap(path);
     if (pixmap.isNull()) {
@@ -145,6 +146,14 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         emit saveRequested();
         event->accept();
         break;
+    case Qt::Key_W:
+        emit bwPanelRequested();
+        event->accept();
+        break;
+    case Qt::Key_Backslash:
+        emit bwCompareRequested();
+        event->accept();
+        break;
     default:
         QGraphicsView::keyPressEvent(event);
         break;
@@ -171,11 +180,12 @@ void ImageViewer::setCropMode(bool active) {
     m_cropMode = active;
 
     if (active) {
-        // Reload the original image from disk
-        if (m_pixmapItem && !m_imagePath.isEmpty()) {
-            QPixmap original(m_imagePath);
-            if (!original.isNull())
-                m_pixmapItem->setPixmap(original);
+        // Use in-memory base pixmap if available (avoids disk reload and respects
+        // any in-memory edits like a previous crop); fall back to disk only if unset.
+        if (m_pixmapItem) {
+            QPixmap base = !m_cropBasePixmap.isNull() ? m_cropBasePixmap : QPixmap(m_imagePath);
+            if (!base.isNull())
+                m_pixmapItem->setPixmap(base);
         }
 
         if (m_pixmapItem) {
@@ -379,6 +389,15 @@ void ImageViewer::drawForeground(QPainter *painter, const QRectF &rect) {
     handle(vr.right(), (vr.top() + vr.bottom()) / 2);
 
     painter->restore();
+}
+
+void ImageViewer::setDisplayPixmap(const QPixmap &px) {
+    if (m_pixmapItem)
+        m_pixmapItem->setPixmap(px);
+}
+
+void ImageViewer::setBasePixmapForCrop(const QPixmap &px) {
+    m_cropBasePixmap = px;
 }
 
 void ImageViewer::setBackgroundGrey(int value) {

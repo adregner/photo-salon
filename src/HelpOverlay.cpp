@@ -32,6 +32,8 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "  B        Background color picker\n"
         "  C        Enter/exit crop mode\n"
         "  S        Save current image\n"
+        "  W        Black & white conversion\n"
+        "  \\        Compare B&W / original\n"
         "  ?        Show/hide this help\n"
         "\n"
         "Mouse & Other Controls\n"
