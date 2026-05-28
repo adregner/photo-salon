@@ -43,6 +43,7 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "  ←    Previous image in folder\n"
         "\n"
         "  Escape   Dismiss fullscreen / current panel\n"
+        "  Q        Quit (press twice)\n"
         "  ?        Show/hide this help\n"
         "\n"
         "Mouse Controls\n"

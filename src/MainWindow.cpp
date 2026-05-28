@@ -2,7 +2,9 @@
 #include "BackgroundColorPicker.h"
 #include "BwConverter.h"
 #include "BwPanel.h"
+#include "Const.h"
 #include "HelpOverlay.h"
+#include "ExitOverlay.h"
 #include "ImageFormats.h"
 #include "ImageViewer.h"
 #include <QApplication>
@@ -175,6 +177,25 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
         if (ok && !selected.isEmpty())
             viewer->loadImage(dir.absoluteFilePath(selected));
     });
+
+    m_exitOverlay = new ExitOverlay(this);
+    m_exitOverlay->resize(size());
+    m_exitOverlay->raise();
+
+    m_exitDebounce = new QTimer(this);
+    m_exitDebounce->setSingleShot(true);
+    m_exitDebounce->setInterval(EXIT_DEBOUNCE);
+    connect(m_exitDebounce, &QTimer::timeout, m_exitOverlay, &ExitOverlay::hide);
+
+    connect(viewer, &ImageViewer::exitRequested, this, [this]() {
+        if (m_exitDebounce->isActive()) {
+            exitApplication();
+        } else {
+            m_exitOverlay->show();
+            m_exitOverlay->raise();
+            m_exitDebounce->start();
+        }
+    });
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
@@ -312,4 +333,8 @@ void MainWindow::deactivateBw() {
         m_bwPanel->setComparing(false);
         m_bwPanel->hide();
     }
+}
+
+void MainWindow::exitApplication() {
+    exit(0);
 }

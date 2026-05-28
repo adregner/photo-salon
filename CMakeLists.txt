@@ -16,6 +16,7 @@ add_library(photo-salon-lib STATIC
     src/BackgroundColorPicker.cpp
     src/BwConverter.cpp
     src/BwPanel.cpp
+    src/ExitOverlay.cpp
 )
 target_include_directories(photo-salon-lib PUBLIC src)
 target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets Qt6::Concurrent)
