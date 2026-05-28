@@ -80,4 +80,12 @@ if [ -z "$CMAKE_PREFIX" ]; then
 fi
 
 cmake -B _build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX"
-cmake --build _build
+
+if [[ -n "$1" ]]; then
+  cd _build
+  make photo-salon
+  test "$1" == "run" && shift
+  ./photo-salon "$@"
+else
+  cmake --build _build
+fi
