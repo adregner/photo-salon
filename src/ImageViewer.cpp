@@ -150,6 +150,10 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         emit bwPanelRequested();
         event->accept();
         break;
+    case Qt::Key_Q:
+        emit exitRequested();
+        event->accept();
+        break;
     case Qt::Key_Backslash:
         emit bwCompareRequested();
         event->accept();

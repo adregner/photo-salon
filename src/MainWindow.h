@@ -9,6 +9,7 @@
 class BackgroundColorPicker;
 class BwPanel;
 class HelpOverlay;
+class ExitOverlay;
 class ImageViewer;
 class QResizeEvent;
 class QTimer;
@@ -31,9 +32,11 @@ private:
     void applyBwConversion();
     void toggleBwCompare();
     void deactivateBw();
+    void exitApplication();
 
     ImageViewer *m_viewer = nullptr;
     HelpOverlay *m_helpOverlay = nullptr;
+    ExitOverlay *m_exitOverlay = nullptr;
     BackgroundColorPicker *m_colorPicker = nullptr;
     Qt::WindowStates m_windowStateBeforeFullscreen = Qt::WindowNoState;
     bool m_forwardingKeyEvent = false;
@@ -48,4 +51,5 @@ private:
     bool                    m_bwComparing   = false;
     QFutureWatcher<QImage> *m_bwWatcher     = nullptr;
     QTimer                 *m_bwDebounce    = nullptr;
+    QTimer                 *m_exitDebounce  = nullptr;
 };
