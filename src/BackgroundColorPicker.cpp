@@ -1,4 +1,5 @@
 #include "BackgroundColorPicker.h"
+#include "Const.h"
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -34,7 +35,7 @@ BackgroundColorPicker::BackgroundColorPicker(QWidget *parent)
 
     m_dismissTimer = new QTimer(this);
     m_dismissTimer->setSingleShot(true);
-    m_dismissTimer->setInterval(15000);
+    m_dismissTimer->setInterval(PANEL_DISMISS);
     connect(m_dismissTimer, &QTimer::timeout, this, &BackgroundColorPicker::hide);
 
     connect(qApp, &QApplication::focusChanged, this, [this](QWidget *, QWidget *) {

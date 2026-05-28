@@ -1,4 +1,5 @@
 #include "BwPanel.h"
+#include "Const.h"
 #include <QApplication>
 #include <QFrame>
 #include <QGridLayout>
@@ -142,7 +143,7 @@ BwPanel::BwPanel(QWidget *parent)
     // Dismiss timer
     m_dismissTimer = new QTimer(this);
     m_dismissTimer->setSingleShot(true);
-    m_dismissTimer->setInterval(15000);
+    m_dismissTimer->setInterval(PANEL_DISMISS);
     connect(m_dismissTimer, &QTimer::timeout, this, &BwPanel::hide);
 
     connect(qApp, &QApplication::focusChanged, this, [this](QWidget *, QWidget *) {
