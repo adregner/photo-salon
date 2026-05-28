@@ -84,10 +84,64 @@ linked; they are provided by Windows or installed via the Visual C++ Redistribut
 ## Authenticode Signing (optional)
 
 Signing the `.exe` prevents Windows SmartScreen from blocking it on the target machine.
-The build script automatically signs after compilation when `osslsigncode` is installed
-and a PFX certificate file is present.
+The build script signs automatically after compilation when the prerequisites below are met.
+Two methods are supported; Azure Trusted Signing is tried first.
 
-### Prerequisites
+### Method 1 — Azure Trusted Signing (recommended)
+
+No local certificate file needed. Signing happens in Azure's cloud HSM, which gives
+immediate SmartScreen reputation because Microsoft is the root CA.
+
+**Prerequisites:**
+
+```bash
+# macOS
+brew install jsign azure-cli
+
+# Linux (Debian/Ubuntu) — jsign requires Java 11+
+sudo apt install default-jre
+curl -LO https://github.com/ebourg/jsign/releases/latest/download/jsign.jar
+sudo install -m755 jsign.jar /usr/local/lib/
+echo '#!/bin/sh\nexec java -jar /usr/local/lib/jsign.jar "$@"' | sudo tee /usr/local/bin/jsign
+sudo chmod +x /usr/local/bin/jsign
+
+# Linux Azure CLI
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+```
+
+**Values needed from Azure Portal:**
+
+| Variable | Where to find it |
+|---|---|
+| `AZURE_TRUSTED_SIGNING_ENDPOINT` | Trusted Signing account → Overview (e.g. `https://myaccount.eus.codesigning.azure.net`) |
+| `AZURE_TRUSTED_SIGNING_CERT_PROFILE` | Trusted Signing account → Certificate profiles → profile name |
+
+**Interactive (local dev):**
+
+```bash
+az login
+export AZURE_TRUSTED_SIGNING_ENDPOINT="https://myaccount.eus.codesigning.azure.net"
+export AZURE_TRUSTED_SIGNING_CERT_PROFILE="MyCertProfile"
+./build-windows.sh
+```
+
+**Service principal (CI / non-interactive):**
+
+```bash
+export AZURE_TENANT_ID="<tenant-id>"
+export AZURE_CLIENT_ID="<app-client-id>"
+export AZURE_CLIENT_SECRET="<app-client-secret>"
+export AZURE_TRUSTED_SIGNING_ENDPOINT="https://myaccount.eus.codesigning.azure.net"
+export AZURE_TRUSTED_SIGNING_CERT_PROFILE="MyCertProfile"
+./build-windows.sh
+```
+
+The service principal needs the **Trusted Signing Certificate Profile Signer** role on the
+Trusted Signing account in Azure Portal (Access control → Add role assignment).
+
+### Method 2 — Local PFX certificate (self-signed or OV cert)
+
+Fallback method if Azure Trusted Signing is not configured. Requires `osslsigncode`.
 
 ```bash
 # macOS
@@ -97,46 +151,36 @@ brew install osslsigncode
 sudo apt install osslsigncode
 ```
 
-### Certificate options
-
-| Option | Cost | SmartScreen result |
-|---|---|---|
-| Self-signed | Free | Silent on machines that trust the cert manually |
-| OV code signing cert (Sectigo, DigiCert, etc.) | ~$100/yr | Warning reducible over time as reputation builds |
-| Azure Trusted Signing | ~$10/mo | No warning — Microsoft-backed, immediate reputation |
-| EV code signing cert | ~$300–500/yr | No warning — immediate reputation, requires USB HSM |
-
-### Self-signed certificate (personal use / known machines)
+**Self-signed cert (personal use / known machines only):**
 
 ```bash
-# Generate key + self-signed cert (valid 10 years)
 openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 3650 -nodes \
   -subj "/CN=Photo Salon/O=Andrew Regner/C=US"
-
-# Bundle into a PFX file
 openssl pkcs12 -export -out codesign.pfx -inkey key.pem -in cert.pem -passout pass:changeme
 ```
 
-Then on each target Windows 11 PC (run PowerShell as Administrator, one-time):
+On each target Windows 11 PC (PowerShell as Administrator, one-time):
 
 ```powershell
 Import-Certificate -FilePath cert.pem -CertStoreLocation Cert:\LocalMachine\Root
 Import-Certificate -FilePath cert.pem -CertStoreLocation Cert:\LocalMachine\TrustedPublisher
 ```
 
-### Running the build with signing
-
-Place `codesign.pfx` in the repo root (it is gitignored), then:
+Place `codesign.pfx` in the repo root (gitignored), then build:
 
 ```bash
 CODESIGN_PASSWORD=changeme ./build-windows.sh
+# or: CODESIGN_CERT=/path/to/my.pfx CODESIGN_PASSWORD=secret ./build-windows.sh
 ```
 
-Or point to a cert in another location:
+### Verifying the signature
+
+From Linux/macOS:
 
 ```bash
-CODESIGN_CERT=/path/to/my.pfx CODESIGN_PASSWORD=secret ./build-windows.sh
+osslsigncode verify _build_win/photo-salon.exe
 ```
 
-If neither `osslsigncode` nor the cert file is found, signing is skipped and the unsigned
-`.exe` is produced as before.
+From Windows: right-click the `.exe` → Properties → Digital Signatures tab.
+
+If neither signing method is configured, the unsigned `.exe` is produced as before.
