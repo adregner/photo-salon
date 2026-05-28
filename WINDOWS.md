@@ -113,14 +113,20 @@ curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
 | Variable | Where to find it |
 |---|---|
-| `AZURE_TRUSTED_SIGNING_ENDPOINT` | Trusted Signing account → Overview (e.g. `https://myaccount.eus.codesigning.azure.net`) |
+| `AZURE_TRUSTED_SIGNING_ENDPOINT` | Trusted Signing account → Overview → Endpoint (hostname only, no `https://`, e.g. `wus2.codesigning.azure.net`) |
+| `AZURE_TRUSTED_SIGNING_ACCOUNT` | Trusted Signing account → Overview → Account name |
 | `AZURE_TRUSTED_SIGNING_CERT_PROFILE` | Trusted Signing account → Certificate profiles → profile name |
+
+Note: jsign requires the alias in `account/profile` form and a token scoped to
+`https://codesigning.azure.net` (not a general Azure management token). The build
+script handles both automatically.
 
 **Interactive (local dev):**
 
 ```bash
 az login
-export AZURE_TRUSTED_SIGNING_ENDPOINT="https://myaccount.eus.codesigning.azure.net"
+export AZURE_TRUSTED_SIGNING_ENDPOINT="wus2.codesigning.azure.net"
+export AZURE_TRUSTED_SIGNING_ACCOUNT="my-signing-account"
 export AZURE_TRUSTED_SIGNING_CERT_PROFILE="MyCertProfile"
 ./build-windows.sh
 ```
@@ -131,7 +137,8 @@ export AZURE_TRUSTED_SIGNING_CERT_PROFILE="MyCertProfile"
 export AZURE_TENANT_ID="<tenant-id>"
 export AZURE_CLIENT_ID="<app-client-id>"
 export AZURE_CLIENT_SECRET="<app-client-secret>"
-export AZURE_TRUSTED_SIGNING_ENDPOINT="https://myaccount.eus.codesigning.azure.net"
+export AZURE_TRUSTED_SIGNING_ENDPOINT="wus2.codesigning.azure.net"
+export AZURE_TRUSTED_SIGNING_ACCOUNT="my-signing-account"
 export AZURE_TRUSTED_SIGNING_CERT_PROFILE="MyCertProfile"
 ./build-windows.sh
 ```

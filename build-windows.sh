@@ -9,12 +9,13 @@ cmake --build _build_win
 # Optional Authenticode signing.
 #
 # Method 1 — Azure Trusted Signing (preferred, no local cert needed):
-#   Set AZURE_TRUSTED_SIGNING_ENDPOINT and AZURE_TRUSTED_SIGNING_CERT_PROFILE.
-#   Authenticate via any Azure DefaultCredential source:
-#     - Interactive:   az login
-#     - Service principal: AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET
-#     - CI/managed identity: AZURE_CLIENT_ID alone (if running on Azure)
-#   Requires: jsign (brew install jsign  /  java -jar jsign.jar)
+#   Required env vars:
+#     AZURE_TRUSTED_SIGNING_ENDPOINT     — e.g. wus2.codesigning.azure.net (no https://)
+#     AZURE_TRUSTED_SIGNING_ACCOUNT      — Trusted Signing account name in Azure Portal
+#     AZURE_TRUSTED_SIGNING_CERT_PROFILE — certificate profile name within that account
+#   Authentication: run `az login` first (or set AZURE_TENANT_ID + AZURE_CLIENT_ID +
+#   AZURE_CLIENT_SECRET for non-interactive/CI use).
+#   Requires: jsign (brew install jsign), azure-cli (brew install azure-cli), Java 11+
 #
 # Method 2 — Local PFX certificate (self-signed or OV cert):
 #   Set CODESIGN_CERT to the PFX path (default: codesign.pfx in repo root).
@@ -27,13 +28,20 @@ EXE="_build_win/photo-salon.exe"
 SIGNING_NAME="Photo Salon"
 SIGNING_URL="https://github.com/adregner/photo-salon"
 
-if [[ -n "${AZURE_TRUSTED_SIGNING_ENDPOINT:-}" && -n "${AZURE_TRUSTED_SIGNING_CERT_PROFILE:-}" ]] \
-   && command -v jsign &>/dev/null; then
+if [[ -n "${AZURE_TRUSTED_SIGNING_ENDPOINT:-}" \
+   && -n "${AZURE_TRUSTED_SIGNING_ACCOUNT:-}" \
+   && -n "${AZURE_TRUSTED_SIGNING_CERT_PROFILE:-}" ]] \
+   && command -v jsign &>/dev/null && command -v az &>/dev/null; then
   echo "Signing ${EXE} via Azure Trusted Signing..."
+  # jsign requires a token scoped specifically to the Trusted Signing resource
+  AZ_TOKEN="$(az account get-access-token \
+    --resource https://codesigning.azure.net \
+    --query accessToken -o tsv)"
   jsign \
     --storetype TRUSTEDSIGNING \
     --keystore "${AZURE_TRUSTED_SIGNING_ENDPOINT}" \
-    --alias   "${AZURE_TRUSTED_SIGNING_CERT_PROFILE}" \
+    --alias   "${AZURE_TRUSTED_SIGNING_ACCOUNT}/${AZURE_TRUSTED_SIGNING_CERT_PROFILE}" \
+    --storepass "${AZ_TOKEN}" \
     --tsaurl  "http://timestamp.acs.microsoft.com" \
     --name    "$SIGNING_NAME" \
     --url     "$SIGNING_URL" \
