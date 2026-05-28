@@ -80,6 +80,12 @@ CMakeUserPresets.json
 *.bak
 *.swp
 
+# Code signing credentials — never commit private keys
+codesign.pfx
+codesign.p12
+key.pem
+cert.pem
+
 # vcpkg
 vcpkg_installed/
 
