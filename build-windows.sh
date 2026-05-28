@@ -3,6 +3,17 @@ set -euo pipefail
 
 "$(dirname "$0")/fetch-windows-deps.sh"
 
+for dir in windows/msvc/lib windows/sdk/lib/ucrt windows/sdk/lib/um; do
+  for f in "$dir"/*.lib; do
+    base=$(basename "$f")
+    upper=$(echo "$base" | tr '[:lower:]' '[:upper:]')
+    if [ "$base" != "$upper" ] && [ ! -e "$dir/$upper" ]; then
+      ln -s "$base" "$dir/$upper"
+      echo "Created: $dir/$upper -> $base"
+    fi
+  done
+done
+
 cmake -B _build_win --toolchain cmake/toolchains/windows-x86_64-clang-cl.cmake -DCMAKE_BUILD_TYPE=Release
 cmake --build _build_win
 

@@ -63,6 +63,9 @@ jobs:
             windows/qt-6.11
           key: windows-cross-deps-${{ hashFiles('fetch-windows-deps.sh') }}
 
+      - name: Fetch windows deps
+        run: ./fetch-windows-deps.sh
+
       - name: Build
         run: ./build-windows.sh
 
