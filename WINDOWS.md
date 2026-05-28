@@ -98,8 +98,8 @@ immediate SmartScreen reputation because Microsoft is the root CA.
 # macOS
 brew install jsign azure-cli
 
-# Linux (Debian/Ubuntu) — jsign requires Java 11+
-sudo apt install default-jre
+# Linux (Debian/Ubuntu) — jsign requires Java 11+ (NOT Java 8)
+sudo apt install openjdk-21-jdk
 curl -LO https://github.com/ebourg/jsign/releases/latest/download/jsign.jar
 sudo install -m755 jsign.jar /usr/local/lib/
 echo '#!/bin/sh\nexec java -jar /usr/local/lib/jsign.jar "$@"' | sudo tee /usr/local/bin/jsign

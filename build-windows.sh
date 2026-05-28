@@ -35,6 +35,8 @@ if [[ -n "${AZURE_TRUSTED_SIGNING_ENDPOINT:-}" && -n "${AZURE_TRUSTED_SIGNING_CE
     --keystore "${AZURE_TRUSTED_SIGNING_ENDPOINT}" \
     --alias   "${AZURE_TRUSTED_SIGNING_CERT_PROFILE}" \
     --tsaurl  "http://timestamp.acs.microsoft.com" \
+    --name    "$SIGNING_NAME" \
+    --url     "$SIGNING_URL" \
     "$EXE"
   echo "Signed: ${EXE}"
 else
