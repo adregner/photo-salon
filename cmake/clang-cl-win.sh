@@ -1,11 +1,11 @@
 #!/bin/bash
 # clang-cl wrapper for cross-compiling to x86_64 Windows (MSVC ABI).
-# Works on macOS (Homebrew LLVM) and Linux (LLVM 18 from apt).
+# Works on macOS (Homebrew LLVM) and Linux (LLVM 19 from apt).
 _proj="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [[ "$(uname)" == "Darwin" ]]; then
     _clang_cl="/opt/homebrew/opt/llvm/bin/clang-cl"
 else
-    _clang_cl="/usr/lib/llvm-18/bin/clang-cl"
+    _clang_cl="/usr/lib/llvm-19/bin/clang-cl"
 fi
 exec "$_clang_cl" \
     --target=x86_64-windows-msvc \

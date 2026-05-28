@@ -27,10 +27,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install LLVM 18 and CMake
+      - name: Install LLVM 19 and CMake
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y cmake clang-18 lld-18 llvm-18
+          sudo apt-get install -y cmake clang-19 lld-19 llvm-19
 
       # /opt is root-owned; hand off to the runner before the cache step
       # so actions/cache can restore into it without sudo.
