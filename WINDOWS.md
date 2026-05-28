@@ -80,3 +80,63 @@ Output: `_build_win/photo-salon.exe` — a PE32+ x86-64 Windows GUI executable.
 
 The MSVC runtime DLLs (`msvcrt.dll`, `msvcp140.dll`, `vcruntime140.dll`) are not statically
 linked; they are provided by Windows or installed via the Visual C++ Redistributable.
+
+## Authenticode Signing (optional)
+
+Signing the `.exe` prevents Windows SmartScreen from blocking it on the target machine.
+The build script automatically signs after compilation when `osslsigncode` is installed
+and a PFX certificate file is present.
+
+### Prerequisites
+
+```bash
+# macOS
+brew install osslsigncode
+
+# Linux (Debian/Ubuntu)
+sudo apt install osslsigncode
+```
+
+### Certificate options
+
+| Option | Cost | SmartScreen result |
+|---|---|---|
+| Self-signed | Free | Silent on machines that trust the cert manually |
+| OV code signing cert (Sectigo, DigiCert, etc.) | ~$100/yr | Warning reducible over time as reputation builds |
+| Azure Trusted Signing | ~$10/mo | No warning — Microsoft-backed, immediate reputation |
+| EV code signing cert | ~$300–500/yr | No warning — immediate reputation, requires USB HSM |
+
+### Self-signed certificate (personal use / known machines)
+
+```bash
+# Generate key + self-signed cert (valid 10 years)
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 3650 -nodes \
+  -subj "/CN=Photo Salon/O=Andrew Regner/C=US"
+
+# Bundle into a PFX file
+openssl pkcs12 -export -out codesign.pfx -inkey key.pem -in cert.pem -passout pass:changeme
+```
+
+Then on each target Windows 11 PC (run PowerShell as Administrator, one-time):
+
+```powershell
+Import-Certificate -FilePath cert.pem -CertStoreLocation Cert:\LocalMachine\Root
+Import-Certificate -FilePath cert.pem -CertStoreLocation Cert:\LocalMachine\TrustedPublisher
+```
+
+### Running the build with signing
+
+Place `codesign.pfx` in the repo root (it is gitignored), then:
+
+```bash
+CODESIGN_PASSWORD=changeme ./build-windows.sh
+```
+
+Or point to a cert in another location:
+
+```bash
+CODESIGN_CERT=/path/to/my.pfx CODESIGN_PASSWORD=secret ./build-windows.sh
+```
+
+If neither `osslsigncode` nor the cert file is found, signing is skipped and the unsigned
+`.exe` is produced as before.
