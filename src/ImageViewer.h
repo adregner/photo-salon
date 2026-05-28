@@ -27,6 +27,8 @@ public:
     void closeHelp();
     QPixmap pixmap() const;
     QPixmap currentDisplayPixmap() const;
+    void setDisplayPixmap(const QPixmap &px);
+    void setBasePixmapForCrop(const QPixmap &px);
     void setBackgroundGrey(int value);
     int backgroundGrey() const { return m_backgroundGrey; }
     void setCropMode(bool active);
@@ -42,6 +44,8 @@ signals:
     void backgroundPickerRequested();
     void cropModeChanged(bool active);
     void saveRequested();
+    void bwPanelRequested();
+    void bwCompareRequested();
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -69,6 +73,7 @@ private:
 
     QGraphicsScene *m_scene;
     QGraphicsPixmapItem *m_pixmapItem = nullptr;
+    QPixmap m_cropBasePixmap;
     QString m_imagePath;
     QSize m_nativeSize;
     bool m_fitted = true;
