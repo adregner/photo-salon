@@ -10,6 +10,10 @@ QStringList supportedExtensions() {
     return filters;
 }
 
+QString supportedFileFilter() {
+    return QStringLiteral("Images (%1);;All Files (*)").arg(supportedExtensions().join(' '));
+}
+
 QString resolveImagePath(const QString &arg, QString *error) {
     QFileInfo info(arg);
 

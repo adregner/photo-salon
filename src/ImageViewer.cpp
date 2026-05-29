@@ -158,6 +158,10 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         emit bwCompareRequested();
         event->accept();
         break;
+    case Qt::Key_O:
+        emit openFileRequested();
+        event->accept();
+        break;
     default:
         QGraphicsView::keyPressEvent(event);
         break;
