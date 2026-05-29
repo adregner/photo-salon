@@ -37,7 +37,9 @@
       "Bash(/opt/homebrew/opt/lld@21/bin/lld-link --version)",
       "Write(docs/superpowers/plans/*.md)",
       "Bash(./build *)",
-      "Bash(gh run *)"
+      "Bash(gh run *)",
+      "Bash(gh secret *)",
+      "Bash(gh variable *)"
     ]
   }
 }
