@@ -15,7 +15,8 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
     p.fillRect(rect(), QColor(0, 0, 0, 128));
 
     QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    font.setPointSize(24);
+    constexpr int maxFontSize = 24;
+    font.setPointSize(maxFontSize);
     p.setFont(font);
     p.setPen(Qt::white);
 
@@ -52,5 +53,14 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
 
     // Left-align at 1/3 width so monospace columns stay intact; center vertically
     QRect drawArea(width() / 3, 0, width() * 2 / 3, height());
+
+    // Scale font down if all lines won't fit vertically at the max size
+    QRect textBounds = p.boundingRect(drawArea, Qt::AlignLeft | Qt::AlignTop, text);
+    if (textBounds.height() > height()) {
+        int scaledSize = maxFontSize * height() / textBounds.height();
+        font.setPointSize(qMax(1, scaledSize));
+        p.setFont(font);
+    }
+
     p.drawText(drawArea, Qt::AlignLeft | Qt::AlignVCenter, text);
 }
