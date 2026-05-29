@@ -81,6 +81,7 @@ jobs:
   sign-and-release:
     runs-on: windows-latest
     needs: build
+    environment: builder
 
     steps:
       - name: Download unsigned exe
