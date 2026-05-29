@@ -6,7 +6,7 @@
 
 static QString makeTempImage(QObject *parent) {
     auto *tmp = new QTemporaryFile("crop_XXXXXX.png", parent);
-    tmp->open();
+    Q_ASSERT(tmp->open());
     tmp->close();
     QImage img(200, 150, QImage::Format_RGB32);
     img.fill(Qt::cyan);
