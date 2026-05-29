@@ -6,7 +6,7 @@ set -euo pipefail
 for dir in windows/msvc/lib windows/sdk/lib/ucrt windows/sdk/lib/um; do
   for f in "$dir"/*.lib; do
     base=$(basename "$f")
-    upper=$(echo "$base" | tr '[:lower:]' '[:upper:]')
+    upper="$(echo "${base%.lib}" | tr '[:lower:]' '[:upper:]').lib"
     if [ "$base" != "$upper" ] && [ ! -e "$dir/$upper" ]; then
       ln -s "$base" "$dir/$upper"
       echo "Created: $dir/$upper -> $base"
