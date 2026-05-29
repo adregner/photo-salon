@@ -258,6 +258,8 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
     if (m_helpOverlay)
         m_helpOverlay->resize(size());
+    if (m_exitOverlay)
+        m_exitOverlay->resize(size());
     if (m_colorPicker && m_colorPicker->isVisible()) {
         int y = height() - m_colorPicker->sizeHint().height() - 10;
         m_colorPicker->move(10, y);
