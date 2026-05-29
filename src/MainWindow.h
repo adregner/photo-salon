@@ -33,6 +33,7 @@ private:
     void toggleBwCompare();
     void deactivateBw();
     void exitApplication();
+    void openFile();
 
     ImageViewer *m_viewer = nullptr;
     HelpOverlay *m_helpOverlay = nullptr;

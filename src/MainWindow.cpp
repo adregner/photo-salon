@@ -7,6 +7,7 @@
 #include "ExitOverlay.h"
 #include "ImageFormats.h"
 #include "ImageViewer.h"
+#include "OpenDialog.h"
 #include <QApplication>
 #include <QDir>
 #include <QFileDialog>
@@ -187,6 +188,8 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     m_exitDebounce->setInterval(EXIT_DEBOUNCE);
     connect(m_exitDebounce, &QTimer::timeout, m_exitOverlay, &ExitOverlay::hide);
 
+    connect(viewer, &ImageViewer::openFileRequested, this, &MainWindow::openFile);
+
     connect(viewer, &ImageViewer::exitRequested, this, [this]() {
         if (m_exitDebounce->isActive()) {
             exitApplication();
@@ -339,4 +342,16 @@ void MainWindow::deactivateBw() {
 
 void MainWindow::exitApplication() {
     exit(0);
+}
+
+void MainWindow::openFile() {
+    QString startDir = m_viewer->currentPath().isEmpty()
+        ? QDir::homePath()
+        : QFileInfo(m_viewer->currentPath()).absolutePath();
+    QString selected = showOpenDialog(this, startDir);
+    if (selected.isEmpty())
+        return;
+    QString resolved = resolveImagePath(selected);
+    if (!resolved.isEmpty())
+        m_viewer->loadImage(resolved);
 }

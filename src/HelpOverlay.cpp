@@ -42,6 +42,7 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "\n"
         "  →    Next image in folder\n"
         "  ←    Previous image in folder\n"
+        "  O    Open file\n"
         "\n"
         "  Escape   Dismiss fullscreen / current panel\n"
         "  Q        Quit (press twice)\n"

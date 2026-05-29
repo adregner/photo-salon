@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(photo-salon VERSION 0.1.0 LANGUAGES CXX)
+project(photo-salon VERSION 0.1.0 LANGUAGES CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,6 +18,12 @@ add_library(photo-salon-lib STATIC
     src/BwPanel.cpp
     src/ExitOverlay.cpp
 )
+if(APPLE)
+    target_sources(photo-salon-lib PRIVATE src/OpenDialog.mm)
+    target_link_libraries(photo-salon-lib PUBLIC "-framework AppKit" "-framework UniformTypeIdentifiers")
+else()
+    target_sources(photo-salon-lib PRIVATE src/OpenDialog.cpp)
+endif()
 target_include_directories(photo-salon-lib PUBLIC src)
 target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets Qt6::Concurrent)
 

@@ -47,6 +47,7 @@ signals:
     void bwPanelRequested();
     void bwCompareRequested();
     void exitRequested();
+    void openFileRequested();
 
 protected:
     void showEvent(QShowEvent *event) override;
