@@ -84,6 +84,8 @@ jobs:
     environment: builder
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download unsigned exe
         uses: actions/download-artifact@v4
         with:
