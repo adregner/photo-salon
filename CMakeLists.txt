@@ -32,5 +32,15 @@ target_link_libraries(photo-salon PRIVATE photo-salon-lib)
 if(WIN32)
     set_target_properties(photo-salon PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
+if(APPLE)
+    set_target_properties(photo-salon PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "Photo Salon"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.aregner.photo-salon"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_COPYRIGHT "Copyright © 2024 Andrew Regner"
+    )
+endif()
 
 add_subdirectory(tests)

@@ -28,6 +28,8 @@ brew install qt cmake
 
 ## Building
 
+[![Release](https://github.com/adregner/photo-salon/actions/workflows/release.yml/badge.svg?event=release)](https://github.com/adregner/photo-salon/actions/workflows/release.yml)
+
 ### Linux / macOS
 
 ```bash
@@ -59,6 +61,35 @@ Cross-compiles a self-contained static `.exe` using `clang-cl` targeting the MSV
 ./build-windows.sh
 # → _build_win/photo-salon.exe
 ```
+
+### macOS app bundle
+
+Produces a self-contained `photo-salon.app` (and optionally a `.dmg`) with all Qt frameworks bundled in:
+
+```bash
+./bundle-macos.sh           # → _bundle/photo-salon.app
+./bundle-macos.sh --dmg     # → _bundle/photo-salon.app + _bundle/photo-salon.dmg
+```
+
+**Code signing** is opt-in via environment variables:
+
+| Variable | Purpose |
+|---|---|
+| `CODESIGN_IDENTITY` | Signing identity — `"Developer ID Application: Name (TEAMID)"` or `"-"` for ad-hoc |
+| `NOTARIZE_APPLE_ID` | Apple ID email for notarization (requires a signed DMG) |
+| `NOTARIZE_PASSWORD` | App-specific password or `@keychain:<item>` |
+| `NOTARIZE_TEAM_ID` | 10-character Apple Developer team ID |
+
+```bash
+# Signed + notarized DMG (for distribution to other Macs)
+CODESIGN_IDENTITY="Developer ID Application: Your Name (ABC123DEF4)" \
+NOTARIZE_APPLE_ID="you@example.com" \
+NOTARIZE_PASSWORD="@keychain:notarytool" \
+NOTARIZE_TEAM_ID="ABC123DEF4" \
+./bundle-macos.sh
+```
+
+A **Developer ID** certificate requires an Apple Developer Program membership. Notarization is required for Gatekeeper to allow the app on other Macs (macOS 10.15+).
 
 ## Running
 
