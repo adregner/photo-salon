@@ -82,6 +82,8 @@ jobs:
     runs-on: windows-latest
     needs: build
     environment: builder
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
