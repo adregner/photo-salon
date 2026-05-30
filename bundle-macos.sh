@@ -66,25 +66,32 @@ cp -R "$BUILD_DIR/photo-salon.app" "$APP"
 
 # ── 4. Deploy Qt frameworks ────────────────────────────────────────────────────
 echo "→ Deploying Qt frameworks…"
-if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
-    "$MACDEPLOYQT" "$APP" -sign-for-notarization="$CODESIGN_IDENTITY"
-else
-    "$MACDEPLOYQT" "$APP"
-fi
+"$MACDEPLOYQT" "$APP"
 
 # ── 5. Code sign (optional) ────────────────────────────────────────────────────
+# Sign all nested components (frameworks, plugins, dylibs) first, then the bundle.
+# This inside-out order is required by Apple — signing the bundle last seals it.
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
     echo "→ Signing with identity: $CODESIGN_IDENTITY"
-    # macdeployqt -sign-for-notarization already signs the bundle, but we re-sign
-    # the main executable explicitly to attach the entitlements.
+
+    # Sign all dylibs and frameworks from the inside out
+    while IFS= read -r -d '' item; do
+        codesign --force --options runtime --sign "$CODESIGN_IDENTITY" "$item"
+    done < <(find "$APP/Contents/Frameworks" \( -name "*.dylib" -o -name "*.framework" \) -print0 2>/dev/null || true)
+
+    # Sign plugins
+    while IFS= read -r -d '' item; do
+        codesign --force --options runtime --sign "$CODESIGN_IDENTITY" "$item"
+    done < <(find "$APP/Contents/PlugIns" -name "*.dylib" -print0 2>/dev/null || true)
+
+    # Sign the main executable with entitlements, then seal the bundle
     codesign \
         --force \
         --options runtime \
         --entitlements "$ENTITLEMENTS" \
         --sign "$CODESIGN_IDENTITY" \
-        "$APP/Contents/MacOS/photo-salon"
+        "$APP"
 
-    # Verify
     codesign --verify --deep --strict "$APP"
     echo "   ✓ Signature verified"
 fi
