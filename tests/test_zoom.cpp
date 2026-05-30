@@ -1,5 +1,6 @@
 #include <QtTest/QtTest>
 #include <QApplication>
+#include <QDir>
 #include <QImage>
 #include <QShowEvent>
 #include <QTemporaryFile>
@@ -31,13 +32,15 @@ private:
 };
 
 ZoomTest::ZoomTest() {
-    m_tmpFile = new QTemporaryFile("test_XXXXXX.png", this);
+    // Use absolute path template: relative templates fail on some Qt/macOS configs.
+    // Write image while the file is open, then close for QPixmap to read it.
+    m_tmpFile = new QTemporaryFile(QDir::tempPath() + "/test_XXXXXX.png", this);
     Q_ASSERT(m_tmpFile->open());
-    m_tmpFile->close();
+    m_imagePath = m_tmpFile->fileName();
     QImage img(200, 150, QImage::Format_RGB32);
     img.fill(Qt::blue);
-    img.save(m_tmpFile->fileName());
-    m_imagePath = m_tmpFile->fileName();
+    img.save(m_tmpFile, "PNG");
+    m_tmpFile->close();
 }
 
 ZoomTest::~ZoomTest() {}
@@ -66,10 +69,10 @@ void ZoomTest::zoomPreservesScaleOnResize() {
 void ZoomTest::keyZeroRestoreFit() {
     ImageViewer viewer(m_imagePath);
     viewer.resize(400, 300);
+    viewer.show();  // required so showEvent() calls fitImage() before we capture fitScale
     QCoreApplication::processEvents();
 
-    // Capture fit-to-window scale (processEvents triggers Qt's internal resize/show path)
-    // which calls fitImage() with the real viewport size
+    // Capture fit-to-window scale after the widget is shown and fitImage() has run
     double fitScale = viewer.transform().m11();
 
     // Zoom in — scale moves away from fitScale

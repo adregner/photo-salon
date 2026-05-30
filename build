@@ -24,6 +24,16 @@ qt_version_at() {
     [ -x "$qmake" ] && "$qmake" -query QT_VERSION 2>/dev/null || echo ""
 }
 
+photo_salon_exe() {
+  if [ "$OS" = "Darwin" ]; then
+    ./photo-salon.app/Contents/MacOS/photo-salon "$@"
+  elif [ "$OS" = "Linux" ]; then
+    ./photo-salon "$@"
+  else
+    ./photo-salon.exe "$@"
+  fi
+}
+
 CMAKE_PREFIX=""
 
 # 1. Locally fetched Qt (Linux fetch-linux-qt.sh output)
@@ -85,7 +95,7 @@ if [[ -n "${1:-}" ]]; then
   cd _build
   make photo-salon
   test "$1" == "run" && shift
-  ./photo-salon "$@"
+  photo_salon_exe "$@"
 else
   cmake --build _build
 fi

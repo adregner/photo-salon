@@ -1,17 +1,22 @@
 #include <QtTest/QtTest>
 #include <QApplication>
+#include <QDir>
+#include <QFile>
 #include <QImage>
 #include <QTemporaryFile>
 #include "ImageViewer.h"
 
 static QString makeTempImage(QObject *parent) {
-    auto *tmp = new QTemporaryFile("crop_XXXXXX.png", parent);
-    Q_ASSERT(tmp->open());
-    tmp->close();
+    // Use absolute path template: relative templates fail on some Qt/macOS configs.
+    // Write image while the file is open, then close for QPixmap to read it.
+    auto *tmp = new QTemporaryFile(QDir::tempPath() + "/crop_XXXXXX.png", parent);
+    if (!tmp->open()) return {};
+    QString path = tmp->fileName();
     QImage img(200, 150, QImage::Format_RGB32);
     img.fill(Qt::cyan);
-    img.save(tmp->fileName());
-    return tmp->fileName();
+    img.save(tmp, "PNG");
+    tmp->close();
+    return path;
 }
 
 class CropToolTest : public QObject {
