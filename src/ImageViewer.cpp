@@ -5,6 +5,7 @@
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsTextItem>
+#include <QImageReader>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPixmap>
@@ -38,7 +39,9 @@ void ImageViewer::loadImage(const QString &path) {
     m_activeHandle = CropHandle::None;
     m_cropBasePixmap = {};
 
-    QPixmap pixmap(path);
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    QPixmap pixmap = QPixmap::fromImage(reader.read());
     if (pixmap.isNull()) {
         auto *errorText = new QGraphicsTextItem(
             QString("Failed to load image:\n%1").arg(path));
