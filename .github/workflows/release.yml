@@ -1,17 +1,29 @@
-# Builds, signs, and uploads photo-salon.exe whenever a GitHub release is created.
+# Builds, signs, and uploads release artifacts whenever a GitHub release is created.
 #
-# Required GitHub secrets (Settings → Secrets and variables → Actions → Secrets):
+# ── Windows secrets (Settings → Secrets and variables → Actions → Secrets) ──
 #   AZURE_TENANT_ID       — Azure AD tenant ID
 #   AZURE_CLIENT_ID       — service principal / app registration client ID
 #   AZURE_CLIENT_SECRET   — service principal client secret
 #
-# Required GitHub variables (Settings → Secrets and variables → Actions → Variables):
+# ── Windows variables (Settings → Secrets and variables → Actions → Variables) ──
 #   AZURE_TRUSTED_SIGNING_ENDPOINT     — endpoint hostname, e.g. wus2.codesigning.azure.net
 #   AZURE_TRUSTED_SIGNING_ACCOUNT      — Trusted Signing account name
 #   AZURE_TRUSTED_SIGNING_CERT_PROFILE — certificate profile name
 #
 # The service principal needs the "Trusted Signing Certificate Profile Signer" role
 # on the Trusted Signing account in Azure Portal (Access control → Add role assignment).
+#
+# ── macOS secrets ────────────────────────────────────────────────────────────
+#   MACOS_CERTIFICATE          — base64-encoded Developer ID Application .p12
+#                                export: base64 -i cert.p12 | pbcopy
+#   MACOS_CERTIFICATE_PASSWORD — password used when exporting the .p12
+#   MACOS_CODESIGN_IDENTITY    — full identity string from `security find-identity`:
+#                                "Developer ID Application: Your Name (TEAMID)"
+#   MACOS_NOTARIZE_APPLE_ID    — Apple ID email address
+#   MACOS_NOTARIZE_PASSWORD    — app-specific password (appleid.apple.com → Security)
+#   MACOS_NOTARIZE_TEAM_ID     — 10-character team ID (developer.apple.com → Membership)
+#
+# Signing + notarization are skipped if the MACOS_CERTIFICATE secret is not set.
 
 name: Release
 
@@ -111,5 +123,67 @@ jobs:
 
       - name: Upload to release
         run: gh release upload "${{ github.ref_name }}" to-sign/photo-salon.exe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # Build, bundle, sign, notarize, and upload a macOS DMG.
+  # Signing is opt-in: the job always runs; signing/notarization are skipped
+  # when the MACOS_CERTIFICATE secret is absent.
+  build-macos:
+    runs-on: macos-latest
+    environment: builder
+    permissions:
+      contents: write
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Homebrew Qt bottles
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/Homebrew/downloads
+          key: homebrew-qt-${{ runner.arch }}-6.x
+
+      - name: Install Qt and CMake
+        run: brew install qt cmake
+
+      # Imports the Developer ID certificate into a short-lived keychain so that
+      # codesign can access it non-interactively. Skipped when the secret is unset.
+      - name: Import signing certificate
+        if: env.MACOS_CERTIFICATE != ''
+        env:
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 20)"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          # Allow codesign to use the key without an interactive prompt
+          security set-key-partition-list \
+            -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Build, bundle, sign, and notarize
+        env:
+          CODESIGN_IDENTITY:  ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          NOTARIZE_APPLE_ID:  ${{ secrets.MACOS_NOTARIZE_APPLE_ID }}
+          NOTARIZE_PASSWORD:  ${{ secrets.MACOS_NOTARIZE_PASSWORD }}
+          NOTARIZE_TEAM_ID:   ${{ secrets.MACOS_NOTARIZE_TEAM_ID }}
+        run: ./bundle-macos.sh --dmg
+
+      - name: Delete signing keychain
+        if: always() && env.KEYCHAIN_PATH != ''
+        run: security delete-keychain "$KEYCHAIN_PATH"
+
+      - name: Upload DMG to release
+        run: gh release upload "${{ github.ref_name }}" _bundle/photo-salon.dmg --clobber
         env:
           GH_TOKEN: ${{ github.token }}
