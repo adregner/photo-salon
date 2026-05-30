@@ -3,6 +3,8 @@
 #include "BwConverter.h"
 #include "BwPanel.h"
 #include "Const.h"
+#include "ExifOverlay.h"
+#include "ExifReader.h"
 #include "HelpOverlay.h"
 #include "ExitOverlay.h"
 #include "ImageFormats.h"
@@ -56,6 +58,24 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     m_helpOverlay->resize(size());
     m_helpOverlay->raise();
     connect(viewer, &ImageViewer::helpVisibilityChanged, m_helpOverlay, &QWidget::setVisible);
+
+    m_exifOverlay = new ExifOverlay(this);
+    m_exifOverlay->resize(size());
+    m_exifOverlay->raise();
+    connect(viewer, &ImageViewer::exifRequested, this, [this, viewer]() {
+        if (m_exifOverlay->isVisible()) {
+            m_exifOverlay->hide();
+            return;
+        }
+        m_exifOverlay->setData(ExifReader::read(viewer->currentPath()));
+        m_exifOverlay->show();
+        m_exifOverlay->raise();
+    });
+    // Refresh EXIF data when a new image is loaded
+    connect(viewer, &ImageViewer::imagePathChanged, this, [this](const QString &) {
+        if (m_exifOverlay->isVisible())
+            m_exifOverlay->hide();
+    });
 
     connect(viewer, &ImageViewer::fullscreenToggleRequested, this, &MainWindow::toggleFullscreen);
 
@@ -222,6 +242,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     auto *ke = static_cast<QKeyEvent *>(event);
 
     if (ke->key() == Qt::Key_Escape) {
+        if (m_exifOverlay && m_exifOverlay->isVisible()) {
+            m_exifOverlay->hide();
+            return true;
+        }
         if (m_colorPicker && m_colorPicker->isVisible()) {
             m_colorPicker->hide();
             return true;
@@ -273,6 +297,8 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
     if (m_helpOverlay)
         m_helpOverlay->resize(size());
+    if (m_exifOverlay)
+        m_exifOverlay->resize(size());
     if (m_exitOverlay)
         m_exitOverlay->resize(size());
     if (m_colorPicker && m_colorPicker->isVisible()) {

@@ -177,6 +177,10 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         emit openFileRequested();
         event->accept();
         break;
+    case Qt::Key_E:
+        emit exifRequested();
+        event->accept();
+        break;
     default:
         QGraphicsView::keyPressEvent(event);
         break;

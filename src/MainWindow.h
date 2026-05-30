@@ -9,6 +9,7 @@
 
 class BackgroundColorPicker;
 class BwPanel;
+class ExifOverlay;
 class HelpOverlay;
 class ExitOverlay;
 class ImageViewer;
@@ -39,6 +40,7 @@ private:
 
     ImageViewer *m_viewer = nullptr;
     HelpOverlay *m_helpOverlay = nullptr;
+    ExifOverlay *m_exifOverlay = nullptr;
     ExitOverlay *m_exitOverlay = nullptr;
     BackgroundColorPicker *m_colorPicker = nullptr;
     Qt::WindowStates m_windowStateBeforeFullscreen = Qt::WindowNoState;

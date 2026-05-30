@@ -51,6 +51,7 @@ signals:
     void flipVerticalRequested();
     void exitRequested();
     void openFileRequested();
+    void exifRequested();
 
 protected:
     void showEvent(QShowEvent *event) override;

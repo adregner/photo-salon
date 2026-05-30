@@ -11,6 +11,15 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
 qt_standard_project_setup()
 enable_testing()
 
+# easyexif — single-file JPEG EXIF parser, no external dependencies
+include(FetchContent)
+FetchContent_Declare(easyexif
+    GIT_REPOSITORY https://github.com/mayanklahiri/easyexif.git
+    GIT_TAG        cd994a3b6009bc3c1f84062e96bd7f5ad16e85f6
+    GIT_SHALLOW    ON
+)
+FetchContent_MakeAvailable(easyexif)
+
 add_library(photo-salon-lib STATIC
     src/MainWindow.cpp
     src/ImageViewer.cpp
@@ -20,6 +29,9 @@ add_library(photo-salon-lib STATIC
     src/BwConverter.cpp
     src/BwPanel.cpp
     src/ExitOverlay.cpp
+    src/ExifReader.cpp
+    src/ExifOverlay.cpp
+    ${easyexif_SOURCE_DIR}/exif.cpp
 )
 if(APPLE)
     target_sources(photo-salon-lib PRIVATE src/OpenDialog.mm)
@@ -28,6 +40,7 @@ else()
     target_sources(photo-salon-lib PRIVATE src/OpenDialog.cpp)
 endif()
 target_include_directories(photo-salon-lib PUBLIC src)
+target_include_directories(photo-salon-lib PRIVATE ${easyexif_SOURCE_DIR})
 target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets Qt6::Concurrent)
 
 qt_add_executable(photo-salon src/main.cpp)

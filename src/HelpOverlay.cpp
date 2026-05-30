@@ -40,6 +40,7 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "  V    Flip vertical\n"
         "  S    Save current image\n"
         "  \\    Compare original image\n"
+        "  E    EXIF metadata\n"
         "\n"
         "  Navigate:\n"
         "\n"
