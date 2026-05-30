@@ -27,8 +27,9 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
 {
     m_viewer = new ImageViewer(imagePath, this);
     m_diskPixmap = m_viewer->pixmap();   // capture image from initial load
+    m_orientedDiskPixmap = m_diskPixmap;
     m_basePixmap = m_diskPixmap;
-    m_viewer->setBasePixmapForCrop(m_diskPixmap);
+    m_viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
     auto *viewer = m_viewer;
     setCentralWidget(viewer);
     qApp->installEventFilter(this);
@@ -36,9 +37,10 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     setWindowTitle(QString("photo-salon — %1").arg(QFileInfo(imagePath).fileName()));
     connect(viewer, &ImageViewer::imagePathChanged, this, [this, viewer](const QString &path) {
         setWindowTitle(QString("photo-salon — %1").arg(QFileInfo(path).fileName()));
-        m_diskPixmap = viewer->pixmap();   // new image from disk; reset crop origin
+        m_diskPixmap = viewer->pixmap();   // new image from disk; reset crop origin and orientation
+        m_orientedDiskPixmap = m_diskPixmap;
         m_basePixmap = m_diskPixmap;
-        viewer->setBasePixmapForCrop(m_diskPixmap);
+        viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
         deactivateBw();
     });
 
@@ -145,9 +147,9 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
         } else {
             // Crop applied: viewer->pixmap() is the freshly-cropped color image.
             m_basePixmap = viewer->pixmap();
-            // Always pass m_diskPixmap so re-entering crop shows the full original —
-            // the user can expand as well as shrink the selection.
-            viewer->setBasePixmapForCrop(m_diskPixmap);
+            // Always pass m_orientedDiskPixmap so re-entering crop shows the full
+            // original at the current orientation — the user can expand as well as shrink.
+            viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
             if (m_bwActive) {
                 m_bwComparing = false;
                 m_bwPanel->setComparing(false);
@@ -189,6 +191,16 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     connect(m_exitDebounce, &QTimer::timeout, m_exitOverlay, &ExitOverlay::hide);
 
     connect(viewer, &ImageViewer::openFileRequested, this, &MainWindow::openFile);
+
+    connect(viewer, &ImageViewer::rotateRequested, this, [this]() {
+        applyOrientationTransform(QTransform().rotate(90));
+    });
+    connect(viewer, &ImageViewer::flipHorizontalRequested, this, [this]() {
+        applyOrientationTransform(QTransform().scale(-1, 1));
+    });
+    connect(viewer, &ImageViewer::flipVerticalRequested, this, [this]() {
+        applyOrientationTransform(QTransform().scale(1, -1));
+    });
 
     connect(viewer, &ImageViewer::exitRequested, this, [this]() {
         if (m_exitDebounce->isActive()) {
@@ -337,6 +349,43 @@ void MainWindow::deactivateBw() {
     if (m_bwPanel) {
         m_bwPanel->setComparing(false);
         m_bwPanel->hide();
+    }
+}
+
+void MainWindow::applyOrientationTransform(const QTransform &t) {
+    if (m_orientedDiskPixmap.isNull()) return;
+
+    // If crop is active, apply it first so the transform acts on the cropped image.
+    if (m_viewer->cropMode())
+        m_viewer->setCropMode(false);
+
+    // Compute the full transform Qt uses internally (pure t + translation into positive coords).
+    // We need this to map the crop rect into the new image's coordinate space.
+    QSize oldSize = m_orientedDiskPixmap.size();
+    QTransform full = QPixmap::trueMatrix(t, oldSize.width(), oldSize.height());
+
+    // Transform the full oriented disk pixmap (keeps the un-cropped original at current orientation).
+    m_orientedDiskPixmap = m_orientedDiskPixmap.transformed(t, Qt::SmoothTransformation);
+
+    // Transform the saved crop rect so re-entering crop still pre-selects the same
+    // region, now mapped into the rotated/flipped image's coordinate space.
+    QRectF cropRect = m_viewer->cropRect();
+    if (cropRect.isValid() && !cropRect.isEmpty())
+        m_viewer->setCropRect(full.mapRect(cropRect));
+
+    // Update crop base so entering crop always shows the full oriented original.
+    m_viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
+
+    // m_basePixmap is the display image (orientation + crop applied).
+    m_basePixmap = m_basePixmap.transformed(t, Qt::SmoothTransformation);
+
+    if (m_bwActive) {
+        m_bwComparing = false;
+        m_bwPanel->setComparing(false);
+        m_originalImage = m_basePixmap.toImage();
+        applyBwConversion();
+    } else {
+        m_viewer->setDisplayPixmap(m_basePixmap);
     }
 }
 

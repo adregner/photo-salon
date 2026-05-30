@@ -46,6 +46,9 @@ signals:
     void saveRequested();
     void bwPanelRequested();
     void bwCompareRequested();
+    void rotateRequested();
+    void flipHorizontalRequested();
+    void flipVerticalRequested();
     void exitRequested();
     void openFileRequested();
 

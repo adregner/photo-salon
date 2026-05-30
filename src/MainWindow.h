@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QPixmap>
 #include <QString>
+#include <QTransform>
 #include <Qt>
 
 class BackgroundColorPicker;
@@ -32,6 +33,7 @@ private:
     void applyBwConversion();
     void toggleBwCompare();
     void deactivateBw();
+    void applyOrientationTransform(const QTransform &t);
     void exitApplication();
     void openFile();
 
@@ -43,8 +45,9 @@ private:
     bool m_forwardingKeyEvent = false;
 
     BwPanel                *m_bwPanel       = nullptr;
-    QPixmap                 m_diskPixmap;   // image as loaded from disk; never modified by crop or BW
-    QPixmap                 m_basePixmap;   // disk image with current crop applied; BW source
+    QPixmap                 m_diskPixmap;        // image exactly as loaded from disk; never modified
+    QPixmap                 m_orientedDiskPixmap; // m_diskPixmap with current rotation/flip applied; always the full-size crop base
+    QPixmap                 m_basePixmap;        // m_orientedDiskPixmap with current crop applied; BW source
     QImage                  m_originalImage; // = m_basePixmap.toImage(), cached for BW conversion
     QImage                  m_lastBwImage;
     QPixmap                 m_lastBwPixmap;

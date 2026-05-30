@@ -57,15 +57,17 @@ Cross-compile a static `photo-salon.exe` from macOS using `clang-cl` and `lld-li
 All features that modify what is shown on screen must participate in a single ordered pipeline owned by `MainWindow`. The pipeline runs in this order:
 
 1. **Disk image** — loaded by `ImageViewer::loadImage()`, captured into both `MainWindow::m_diskPixmap` and `MainWindow::m_basePixmap` via the `imagePathChanged` signal.
-2. **Crop** — `ImageViewer` manages the crop UI and applies the crop rect to `m_pixmapItem`. When crop exits (`cropModeChanged(false)`), `MainWindow` updates `m_basePixmap = viewer->pixmap()` (the freshly-cropped image). `setBasePixmapForCrop()` is always called with `m_diskPixmap` (not `m_basePixmap`) so that re-entering crop always shows the full original — the user can expand the selection as well as shrink it.
-3. **B&W conversion** — `BwConverter::convert()` runs off the main thread via `QtConcurrent`. It always operates on `m_originalImage` (derived from `m_basePixmap`). After crop is applied, the `cropModeChanged` handler refreshes `m_originalImage` from the new `m_basePixmap` and re-triggers conversion.
-4. **Display** — `ImageViewer::setDisplayPixmap()` swaps the pixmap in `m_pixmapItem` without touching scene rect, fit state, or file path.
+2. **Orientation** — R/H/V keys rotate or flip the image. `applyOrientationTransform()` updates `m_orientedDiskPixmap` (full image at current orientation) and transforms the saved crop rect into the new coordinate space before updating the crop base.
+3. **Crop** — `ImageViewer` manages the crop UI and applies the crop rect to `m_pixmapItem`. When crop exits (`cropModeChanged(false)`), `MainWindow` updates `m_basePixmap = viewer->pixmap()` (the freshly-cropped image). `setBasePixmapForCrop()` is always called with `m_orientedDiskPixmap` so that re-entering crop always shows the full oriented original — the user can expand the selection as well as shrink it.
+4. **B&W conversion** — `BwConverter::convert()` runs off the main thread via `QtConcurrent`. It always operates on `m_originalImage` (derived from `m_basePixmap`). After crop or orientation change, the handler refreshes `m_originalImage` from the new `m_basePixmap` and re-triggers conversion.
+5. **Display** — `ImageViewer::setDisplayPixmap()` swaps the pixmap in `m_pixmapItem` and refreshes the scene rect if dimensions changed (e.g. after 90° rotation).
 
-Two pixmap fields track image state in `MainWindow`:
-- `m_diskPixmap` — the image exactly as loaded from disk. Updated only on load/navigation. **Never modified by crop or BW.** Always used as the base for entering crop mode.
-- `m_basePixmap` — `m_diskPixmap` with the current crop applied. Updated on load/navigation (equals `m_diskPixmap`) and on every crop application. Used as the BW source and restored by `deactivateBw()`. **Never cleared.**
+Three pixmap fields track image state in `MainWindow`:
+- `m_diskPixmap` — the image exactly as loaded from disk. Updated only on load/navigation. **Never modified by crop, orientation, or BW.**
+- `m_orientedDiskPixmap` — `m_diskPixmap` with all rotation/flip transforms applied. This is the full-size crop base. Updated on load/navigation (equals `m_diskPixmap`) and whenever orientation changes. Always passed to `setBasePixmapForCrop()`.
+- `m_basePixmap` — `m_orientedDiskPixmap` with the current crop applied. Updated on load/navigation (equals `m_diskPixmap`), on every crop application, and on every orientation change. Used as the BW source and restored by `deactivateBw()`. **Never cleared.**
 
-Any new feature that transforms the displayed image must read from `m_basePixmap` as its input and write its result back through `setDisplayPixmap()`. If the feature permanently changes image content (as crop does), it must update `m_basePixmap` accordingly. Features that are purely non-destructive display transforms (like BW) leave `m_basePixmap` unchanged.
+Any new feature that transforms the displayed image must read from `m_basePixmap` as its input and write its result back through `setDisplayPixmap()`. If the feature permanently changes image content (as crop and orientation do), it must update `m_basePixmap` accordingly. Features that are purely non-destructive display transforms (like BW) leave `m_basePixmap` unchanged.
 
 ## Key Notes
 

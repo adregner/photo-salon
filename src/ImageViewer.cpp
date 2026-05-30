@@ -150,6 +150,18 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         emit bwPanelRequested();
         event->accept();
         break;
+    case Qt::Key_R:
+        emit rotateRequested();
+        event->accept();
+        break;
+    case Qt::Key_H:
+        emit flipHorizontalRequested();
+        event->accept();
+        break;
+    case Qt::Key_V:
+        emit flipVerticalRequested();
+        event->accept();
+        break;
     case Qt::Key_Q:
         emit exitRequested();
         event->accept();
@@ -244,7 +256,12 @@ void ImageViewer::setCropMode(bool active) {
 
 void ImageViewer::setCropRect(const QRectF &rect) {
     if (!m_pixmapItem) return;
-    QRectF imageRect = QRectF(m_pixmapItem->pixmap().rect());
+    // When the crop base is set, clamp against it (the full oriented original).
+    // This allows MainWindow to store a transformed crop rect while crop is inactive,
+    // when m_pixmapItem shows only the already-cropped display image.
+    QRectF imageRect = !m_cropBasePixmap.isNull()
+        ? QRectF(m_cropBasePixmap.rect())
+        : QRectF(m_pixmapItem->pixmap().rect());
     m_cropRect = rect.intersected(imageRect);
     if (m_cropMode) viewport()->update();
 }
@@ -400,8 +417,12 @@ void ImageViewer::drawForeground(QPainter *painter, const QRectF &rect) {
 }
 
 void ImageViewer::setDisplayPixmap(const QPixmap &px) {
-    if (m_pixmapItem)
-        m_pixmapItem->setPixmap(px);
+    if (!m_pixmapItem) return;
+    m_pixmapItem->setPixmap(px);
+    if (px.size() != m_scene->sceneRect().size().toSize()) {
+        m_scene->setSceneRect(px.rect());
+        if (m_fitted) fitImage();
+    }
 }
 
 void ImageViewer::setBasePixmapForCrop(const QPixmap &px) {
