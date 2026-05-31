@@ -43,6 +43,10 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
         m_orientedDiskPixmap = m_diskPixmap;
         m_basePixmap = m_diskPixmap;
         viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
+        m_rotationAngle = 0;
+        m_flippedH      = false;
+        m_flippedV      = false;
+        m_cropApplied   = false;
         deactivateBw();
     });
 
@@ -67,7 +71,10 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
             m_exifOverlay->hide();
             return;
         }
-        m_exifOverlay->setData(ExifReader::read(viewer->currentPath()));
+        auto data = ExifReader::read(viewer->currentPath());
+        for (auto it = imageStateData().begin(); it != imageStateData().end(); ++it)
+            data.insert(it.key(), it.value());
+        m_exifOverlay->setData(data);
         m_exifOverlay->show();
         m_exifOverlay->raise();
     });
@@ -166,6 +173,7 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
             m_bwDebounce->stop();
         } else {
             // Crop applied: viewer->pixmap() is the freshly-cropped color image.
+            m_cropApplied = true;
             m_basePixmap = viewer->pixmap();
             // Always pass m_orientedDiskPixmap so re-entering crop shows the full
             // original at the current orientation — the user can expand as well as shrink.
@@ -213,12 +221,15 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     connect(viewer, &ImageViewer::openFileRequested, this, &MainWindow::openFile);
 
     connect(viewer, &ImageViewer::rotateRequested, this, [this]() {
+        m_rotationAngle = (m_rotationAngle + 90) % 360;
         applyOrientationTransform(QTransform().rotate(90));
     });
     connect(viewer, &ImageViewer::flipHorizontalRequested, this, [this]() {
+        m_flippedH = !m_flippedH;
         applyOrientationTransform(QTransform().scale(-1, 1));
     });
     connect(viewer, &ImageViewer::flipVerticalRequested, this, [this]() {
+        m_flippedV = !m_flippedV;
         applyOrientationTransform(QTransform().scale(1, -1));
     });
 
@@ -417,6 +428,21 @@ void MainWindow::applyOrientationTransform(const QTransform &t) {
 
 void MainWindow::exitApplication() {
     exit(0);
+}
+
+ExifReader::ExifData MainWindow::imageStateData() const {
+    QStringList edits;
+    if (m_rotationAngle != 0)
+        edits << QString("%1° rotation").arg(m_rotationAngle);
+    if (m_flippedH) edits << "H flip";
+    if (m_flippedV) edits << "V flip";
+    if (m_cropApplied) edits << "crop";
+    if (m_bwActive) edits << "B&W";
+
+    ExifReader::ExifData state;
+    if (!edits.isEmpty())
+        state["State_Edits"] = edits.join(" · ");
+    return state;
 }
 
 void MainWindow::openFile() {

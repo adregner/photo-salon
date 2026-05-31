@@ -41,6 +41,8 @@ QStringList ExifOverlay::defaultTemplate()
         "",
         "{Dimensions}",
         "{FileName}  ·  {FileSize}",
+        "",
+        "{State_Edits}",
     };
 }
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "ExifReader.h"
 #include <QFutureWatcher>
 #include <QImage>
 #include <QMainWindow>
@@ -37,6 +38,7 @@ private:
     void applyOrientationTransform(const QTransform &t);
     void exitApplication();
     void openFile();
+    ExifReader::ExifData imageStateData() const;
 
     ImageViewer *m_viewer = nullptr;
     HelpOverlay *m_helpOverlay = nullptr;
@@ -45,6 +47,11 @@ private:
     BackgroundColorPicker *m_colorPicker = nullptr;
     Qt::WindowStates m_windowStateBeforeFullscreen = Qt::WindowNoState;
     bool m_forwardingKeyEvent = false;
+
+    int                     m_rotationAngle = 0;
+    bool                    m_flippedH      = false;
+    bool                    m_flippedV      = false;
+    bool                    m_cropApplied   = false;
 
     BwPanel                *m_bwPanel       = nullptr;
     QPixmap                 m_diskPixmap;        // image exactly as loaded from disk; never modified
