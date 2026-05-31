@@ -14,12 +14,13 @@ brew install llvm lld@21
 
 ## `windows/` directory layout
 
-All files copied from Windows live under `windows/`, mirroring the SDK/MSVC structure:
+Large build artifacts live under `windows/` and are fetched automatically by `build-windows.sh`
+via `fetch-windows-deps.sh` (downloads from S3). The small import libs are committed to the repo.
 
 ```
 windows/
   sdk/
-    include/        ← NOT committed (140 MB) — copy from Windows SDK
+    include/        ← NOT committed — auto-fetched (140 MB, Windows SDK headers)
       ucrt/
       shared/
       um/
@@ -27,42 +28,23 @@ windows/
       ucrt/         ← committed — ucrt.lib
       um/           ← committed — 37 Windows SDK import libs
   msvc/
-    include/        ← NOT committed (17 MB) — copy from Visual Studio
+    include/        ← NOT committed — auto-fetched (17 MB, MSVC STL headers)
     lib/            ← committed — 5 MSVC runtime import libs
+  qt-6.11/
+    x64/            ← NOT committed — auto-fetched (330 MB, Qt 6.11.1 static build)
 ```
 
-The `lib/` subdirectories contain only the files actually referenced at link time and are
-committed to the repo. The `include/` subdirectories are large and must be copied manually
-from a Windows machine (see below).
-
-## Files to copy from Windows
-
-### `windows/sdk/include/` — Windows SDK headers
-
-**Source (Windows):**
-
-| Subdirectory | Windows path |
-|---|---|
-| `ucrt/` | `C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt\` |
-| `shared/` | `C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\` |
-| `um/` | `C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\` |
-
-### `windows/msvc/include/` — MSVC C++ Standard Library headers
-
-**Source (Windows):**
-```
-C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35227\include\
-```
+The `lib/` subdirectories contain only the files actually referenced at link time.
+The `include/` subdirectories and `qt-6.11/` are downloaded on first build and cached locally.
 
 ### `windows/qt-6.11/x64/` — Qt static build
 
-Qt 6.11.1 built as a static library on Windows with MSVC, installed to this directory.
-Not committed (330 MB). Must be built or copied from a Windows machine.
+Qt 6.11.1 built as a static library on Windows with MSVC.
 
 **Why MSVC is required:** Qt uses the Microsoft C++ ABI (`??`-mangled symbols). A MinGW/Zig
 build uses the Itanium ABI (`_Z`-mangled symbols) and cannot link against these libraries.
 
-Build options used (see `scripts/build-qt-windows-static.bat`):
+Build options used:
 - `-DCMAKE_BUILD_TYPE=Release`
 - `-DBUILD_SHARED_LIBS=OFF`
 - `-DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF`
@@ -70,13 +52,20 @@ Build options used (see `scripts/build-qt-windows-static.bat`):
 ## Build
 
 ```bash
+./build-windows.sh
+```
+
+This fetches any missing Windows dependencies (headers, Qt static libs) from S3, then runs
+CMake and compiles. Output: `_build_win/photo-salon.exe` — a PE32+ x86-64 Windows GUI executable.
+
+To run the CMake steps manually (after dependencies are already fetched):
+
+```bash
 cmake -B _build_win \
   --toolchain cmake/toolchains/windows-x86_64-clang-cl.cmake \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build _build_win
 ```
-
-Output: `_build_win/photo-salon.exe` — a PE32+ x86-64 Windows GUI executable.
 
 The MSVC runtime DLLs (`msvcrt.dll`, `msvcp140.dll`, `vcruntime140.dll`) are not statically
 linked; they are provided by Windows or installed via the Visual C++ Redistributable.

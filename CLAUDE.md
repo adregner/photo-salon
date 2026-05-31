@@ -4,6 +4,10 @@
 
 C++ Qt6 desktop image viewer. Cross-platform: Linux, macOS (primary dev/test), and Windows 10/11.
 
+## Development
+
+When starting work in a cloud container environment (e.g. `bash -c 'test -n "$CLAUDE_CONTAINER"'`), MAKE SURE `origin/main` has been pulled from the remote and is up to date, and that `main` is tracking it and on the same commit.
+
 ## Build
 
 ```bash
