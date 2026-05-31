@@ -24,6 +24,7 @@ public:
     QString currentPath() const { return m_imagePath; }
     QSize nativeImageSize() const { return m_nativeSize; }
     bool helpVisible() const { return m_helpVisible; }
+    void setHelpVisible(bool visible);
     void closeHelp();
     QPixmap pixmap() const;
     QPixmap currentDisplayPixmap() const;

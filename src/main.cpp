@@ -20,15 +20,16 @@ int main(int argc, char *argv[]) {
         }
     } else {
         QString selected = showOpenDialog(nullptr, QDir::homePath());
-        if (selected.isEmpty())
-            return 0;
-        QString error;
-        path = resolveImagePath(selected, &error);
-        if (path.isEmpty()) {
-            QTextStream err(stderr);
-            err << error << "\n";
-            return 1;
+        if (!selected.isEmpty()) {
+            QString error;
+            path = resolveImagePath(selected, &error);
+            if (path.isEmpty()) {
+                QTextStream err(stderr);
+                err << error << "\n";
+                return 1;
+            }
         }
+        // If dialog was canceled, path stays empty → open in idle state
     }
 
     MainWindow window(path);

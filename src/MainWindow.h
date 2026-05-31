@@ -44,6 +44,7 @@ private:
     HelpOverlay *m_helpOverlay = nullptr;
     ExifOverlay *m_exifOverlay = nullptr;
     ExitOverlay *m_exitOverlay = nullptr;
+    QWidget     *m_idleOverlay = nullptr;
     BackgroundColorPicker *m_colorPicker = nullptr;
     Qt::WindowStates m_windowStateBeforeFullscreen = Qt::WindowNoState;
     bool m_forwardingKeyEvent = false;

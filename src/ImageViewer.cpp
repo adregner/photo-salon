@@ -195,6 +195,12 @@ void ImageViewer::applyZoom(double factor) {
     m_fitted = false;
 }
 
+void ImageViewer::setHelpVisible(bool visible) {
+    if (m_helpVisible == visible) return;
+    m_helpVisible = visible;
+    emit helpVisibilityChanged(visible);
+}
+
 void ImageViewer::closeHelp() {
     if (m_helpVisible) {
         m_helpVisible = false;

@@ -19,6 +19,7 @@
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QResizeEvent>
+#include <QPalette>
 #include <QScreen>
 #include <QPushButton>
 #include <QTimer>
@@ -36,9 +37,18 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     setCentralWidget(viewer);
     qApp->installEventFilter(this);
 
-    setWindowTitle(QString("photo-salon — %1").arg(QFileInfo(imagePath).fileName()));
-    connect(viewer, &ImageViewer::imagePathChanged, this, [this, viewer](const QString &path) {
-        setWindowTitle(QString("photo-salon — %1").arg(QFileInfo(path).fileName()));
+    auto updateTitle = [this](const QString &path) {
+        if (path.isEmpty())
+            setWindowTitle("photo-salon");
+        else
+            setWindowTitle(QString("photo-salon — %1").arg(QFileInfo(path).fileName()));
+    };
+    updateTitle(imagePath);
+    connect(viewer, &ImageViewer::imagePathChanged, this, [this, viewer, updateTitle](const QString &path) {
+        updateTitle(path);
+        if (!path.isEmpty() && m_idleOverlay) {
+            m_idleOverlay->hide();
+        }
         m_diskPixmap = viewer->pixmap();   // new image from disk; reset crop origin and orientation
         m_orientedDiskPixmap = m_diskPixmap;
         m_basePixmap = m_diskPixmap;
@@ -58,10 +68,23 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
         resize(800, 600);
     }
 
+    if (imagePath.isEmpty()) {
+        m_idleOverlay = new QWidget(this);
+        m_idleOverlay->setAutoFillBackground(true);
+        m_idleOverlay->setBackgroundRole(QPalette::Shadow);
+        QPalette p;
+        p.setColor(QPalette::Window, Qt::black);
+        m_idleOverlay->setPalette(p);
+        m_idleOverlay->resize(size());
+        m_idleOverlay->raise();
+    }
+
     m_helpOverlay = new HelpOverlay(this);
     m_helpOverlay->resize(size());
     m_helpOverlay->raise();
     connect(viewer, &ImageViewer::helpVisibilityChanged, m_helpOverlay, &QWidget::setVisible);
+    if (imagePath.isEmpty())
+        viewer->setHelpVisible(true);
 
     m_exifOverlay = new ExifOverlay(this);
     m_exifOverlay->resize(size());
@@ -306,6 +329,8 @@ void MainWindow::toggleFullscreen() {
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
+    if (m_idleOverlay && m_idleOverlay->isVisible())
+        m_idleOverlay->resize(size());
     if (m_helpOverlay)
         m_helpOverlay->resize(size());
     if (m_exifOverlay)
