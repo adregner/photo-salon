@@ -30,7 +30,7 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "  0    Fit to window\n"
         "  F    Toggle fullscreen\n"
         "  B    Background color picker\n"
-        "  I    EXIF metadata\n"
+        "  I    Metadata\n"
         "\n"
         "  Edit:\n"
         "\n"

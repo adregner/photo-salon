@@ -104,7 +104,7 @@ void ExifOverlay::paintEvent(QPaintEvent *)
     font.setPointSize(maxFontSize);
     p.setFont(font);
 
-    const QString title    = "EXIF Metadata";
+    const QString title    = "Metadata";
     const QStringList body = renderLines();
 
     QRect drawArea(width() / 3, 20, width() * 2 / 3 - 20, height() - 40);
