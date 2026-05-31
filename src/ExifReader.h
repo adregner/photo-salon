@@ -27,6 +27,8 @@ namespace ExifReader {
     //   "MeteringMode"    — e.g. "Pattern", "Spot"
     //   "Flash"           — present only when flash fired: "Fired"
     //   "GPS"             — e.g. "43°28'2.8\"N  11°53'6.5\"E"
+    //   "GPSLatitude"     — raw decimal latitude, e.g. "43.4675000"
+    //   "GPSLongitude"    — raw decimal longitude, e.g. "11.8851389"
     //   "LensMake"        — lens manufacturer
     //   "LensModel"       — lens model string
     //   "Copyright"       — copyright string

@@ -7,7 +7,7 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent Network)
 qt_standard_project_setup()
 enable_testing()
 
@@ -41,7 +41,7 @@ else()
 endif()
 target_include_directories(photo-salon-lib PUBLIC src)
 target_include_directories(photo-salon-lib PRIVATE ${easyexif_SOURCE_DIR})
-target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets Qt6::Concurrent)
+target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets Qt6::Concurrent Qt6::Network)
 
 qt_add_executable(photo-salon src/main.cpp)
 target_link_libraries(photo-salon PRIVATE photo-salon-lib)

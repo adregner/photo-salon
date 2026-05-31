@@ -177,8 +177,14 @@ ExifData read(const QString &filePath) {
     if (exif.Flash) data["Flash"] = "Fired";
 
     {
-        QString gps = fmtGps(exif.GeoLocation.Latitude, exif.GeoLocation.Longitude);
-        if (!gps.isEmpty()) data["GPS"] = gps;
+        double lat = exif.GeoLocation.Latitude;
+        double lon = exif.GeoLocation.Longitude;
+        QString gps = fmtGps(lat, lon);
+        if (!gps.isEmpty()) {
+            data["GPS"]          = gps;
+            data["GPSLatitude"]  = QString::number(lat, 'f', 7);
+            data["GPSLongitude"] = QString::number(lon, 'f', 7);
+        }
     }
 
     if (!exif.LensInfo.Make.empty())  data["LensMake"]  = qstr(exif.LensInfo.Make);

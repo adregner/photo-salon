@@ -1,8 +1,14 @@
 #include "ExifOverlay.h"
 #include <QFontDatabase>
 #include <QFontMetrics>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPainter>
 #include <QRegularExpression>
+#include <QUrl>
+#include <QUrlQuery>
 
 ExifOverlay::ExifOverlay(QWidget *parent)
     : QWidget(parent)
@@ -29,6 +35,7 @@ QStringList ExifOverlay::defaultTemplate()
         "Flash: {Flash}",
         "",
         "{GPS}",
+        "{Location}",
         "",
         "{Software}",
         "",
@@ -40,7 +47,71 @@ QStringList ExifOverlay::defaultTemplate()
 void ExifOverlay::setData(const ExifReader::ExifData &data)
 {
     m_data = data;
+    m_data.remove("Location");
+
+    bool hasGps = m_data.contains("GPSLatitude") && m_data.contains("GPSLongitude");
+    QString geoKey = hasGps
+        ? m_data["GPSLatitude"] + "," + m_data["GPSLongitude"]
+        : QString{};
+
+    if (hasGps && geoKey != m_pendingGeoKey) {
+        m_pendingGeoKey = geoKey;
+        resolveLocation(m_data["GPSLatitude"].toDouble(),
+                        m_data["GPSLongitude"].toDouble());
+    }
+
     update();
+}
+
+void ExifOverlay::resolveLocation(double lat, double lon)
+{
+    if (!m_nam)
+        m_nam = new QNetworkAccessManager(this);
+
+    QUrl url("https://nominatim.openstreetmap.org/reverse");
+    QUrlQuery q;
+    q.addQueryItem("lat",    QString::number(lat, 'f', 7));
+    q.addQueryItem("lon",    QString::number(lon, 'f', 7));
+    q.addQueryItem("format", "json");
+    q.addQueryItem("zoom",   "10");
+    url.setQuery(q);
+
+    QNetworkRequest req(url);
+    req.setHeader(QNetworkRequest::UserAgentHeader, "photo-salon/1.0");
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                     QNetworkRequest::NoLessSafeRedirectPolicy);
+
+    QString capturedKey = m_pendingGeoKey;
+    auto *reply = m_nam->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, capturedKey]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            return;
+        if (capturedKey != m_pendingGeoKey)
+            return;
+
+        QByteArray body = reply->readAll();
+        QJsonDocument doc = QJsonDocument::fromJson(body);
+        if (doc.isNull()) return;
+
+        QJsonObject addr = doc.object().value("address").toObject();
+        QStringList parts;
+        for (const QString &key : {"city", "town", "village", "county"}) {
+            QString v = addr.value(key).toString();
+            if (!v.isEmpty()) { parts << v; break; }
+        }
+        for (const QString &key : {"state", "region"}) {
+            QString v = addr.value(key).toString();
+            if (!v.isEmpty()) { parts << v; break; }
+        }
+        QString country = addr.value("country").toString();
+        if (!country.isEmpty()) parts << country;
+
+        if (!parts.isEmpty()) {
+            m_data["Location"] = parts.join(", ");
+            update();
+        }
+    });
 }
 
 void ExifOverlay::setTemplate(const QStringList &lines)

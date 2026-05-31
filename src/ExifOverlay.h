@@ -1,5 +1,6 @@
 #pragma once
 #include "ExifReader.h"
+#include <QNetworkAccessManager>
 #include <QStringList>
 #include <QWidget>
 #include <optional>
@@ -40,6 +41,10 @@ private:
     // Returns all rendered, non-skipped lines (blank separators included).
     QStringList renderLines() const;
 
-    ExifReader::ExifData m_data;
-    QStringList          m_template;
+    void resolveLocation(double lat, double lon);
+
+    ExifReader::ExifData    m_data;
+    QStringList             m_template;
+    QNetworkAccessManager  *m_nam = nullptr;
+    QString                 m_pendingGeoKey;
 };
