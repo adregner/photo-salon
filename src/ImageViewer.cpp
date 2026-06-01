@@ -27,6 +27,10 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setBackgroundBrush(Qt::black);
+    // Tab/Backtab are intercepted by Qt's focus machinery at the viewport and never
+    // forwarded to keyPressEvent via the normal QAbstractScrollArea path; handle them
+    // here before the focus machinery sees the event.
+    viewport()->installEventFilter(this);
     loadImage(imagePath);
 }
 
@@ -206,6 +210,17 @@ void ImageViewer::closeHelp() {
         m_helpVisible = false;
         emit helpVisibilityChanged(false);
     }
+}
+
+bool ImageViewer::eventFilter(QObject *obj, QEvent *event) {
+    if (obj == viewport() && event->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent *>(event);
+        if (ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab) {
+            keyPressEvent(ke);
+            return ke->isAccepted();
+        }
+    }
+    return QGraphicsView::eventFilter(obj, event);
 }
 
 void ImageViewer::setCropMode(bool active) {

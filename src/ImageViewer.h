@@ -64,6 +64,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void drawForeground(QPainter *painter, const QRectF &rect) override;
     bool focusNextPrevChild(bool) override { return false; }
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
     enum class CropHandle {

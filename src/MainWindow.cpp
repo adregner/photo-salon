@@ -213,7 +213,10 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
 
     connect(viewer, &ImageViewer::folderBrowseRequested, this, [this, viewer]() {
         QString currentPath = viewer->currentPath();
-        if (currentPath.isEmpty()) return;
+        if (currentPath.isEmpty()) {
+            openFile();
+            return;
+        }
 
         QDir dir = QFileInfo(currentPath).absoluteDir();
         QStringList files = dir.entryList(supportedExtensions(), QDir::Files, QDir::Name);

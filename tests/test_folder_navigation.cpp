@@ -23,6 +23,8 @@ private slots:
     void navigateLeftKey();
     void imagePathChangedSignal();
     void loadImageUpdatesPath();
+    void tabKeyEmitsFolderBrowse();
+    void tabKeyFromViewportEmitsFolderBrowse();
 };
 
 void FolderNavigationTest::loadImageUpdatesPath() {
@@ -106,6 +108,36 @@ void FolderNavigationTest::navigateLeftKey() {
     ImageViewer viewer(c);
     QTest::keyClick(&viewer, Qt::Key_Left);
     QCOMPARE(viewer.currentPath(), b);
+}
+
+void FolderNavigationTest::tabKeyEmitsFolderBrowse() {
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    QString a = makePng(QDir(tmp.path()), "a.png");
+
+    ImageViewer viewer(a);
+    QSignalSpy spy(&viewer, &ImageViewer::folderBrowseRequested);
+
+    QTest::keyClick(&viewer, Qt::Key_Tab);
+
+    QCOMPARE(spy.count(), 1);
+}
+
+void FolderNavigationTest::tabKeyFromViewportEmitsFolderBrowse() {
+    // Sends Tab to the viewport widget — this is the real event path when the app runs
+    // and focus is on the view. QAbstractScrollArea's event filter leaves Tab for the
+    // focus machinery rather than forwarding it; the fix intercepts at the app filter level.
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    QString a = makePng(QDir(tmp.path()), "a.png");
+
+    ImageViewer viewer(a);
+    viewer.show();
+    QSignalSpy spy(&viewer, &ImageViewer::folderBrowseRequested);
+
+    QTest::keyClick(viewer.viewport(), Qt::Key_Tab);
+
+    QCOMPARE(spy.count(), 1);
 }
 
 int main(int argc, char *argv[]) {
