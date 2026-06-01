@@ -1,0 +1,62 @@
+# Runs tests on every push and pull request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Homebrew Qt bottles
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/Homebrew/downloads
+          key: homebrew-qt-${{ runner.arch }}-6.x
+
+      - name: Install Qt and CMake
+        run: brew install qt cmake
+
+      - name: Build
+        run: ./build
+
+      - name: Test
+        run: cd _build && ctest --output-on-failure
+
+  test-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Qt
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Qt
+          key: qt-windows-6.11.1-msvc2022_64
+
+      - name: Install Qt
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          pip install --quiet aqtinstall
+          aqt install-qt windows desktop 6.11.1 win64_msvc2022_64 --outputdir C:\Qt --archives icu qtbase qtconcurrent
+        shell: pwsh
+
+      - name: Configure
+        run: cmake -B _build -DCMAKE_PREFIX_PATH="C:\Qt\6.11.1\msvc2022_64"
+        shell: pwsh
+
+      - name: Build
+        run: cmake --build _build --config Release
+        shell: pwsh
+
+      - name: Test
+        run: ctest --test-dir _build --output-on-failure -C Release
+        shell: pwsh

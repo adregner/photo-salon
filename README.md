@@ -28,7 +28,9 @@ brew install qt cmake
 
 ## Building
 
-[![Release](https://github.com/adregner/photo-salon/actions/workflows/release.yml/badge.svg?event=release)](https://github.com/adregner/photo-salon/actions/workflows/release.yml)
+[![CI](https://github.com/adregner/photo-salon/actions/workflows/ci.yml/badge.svg)](https://github.com/adregner/photo-salon/actions/workflows/ci.yml)
+[![macOS](https://github.com/adregner/photo-salon/actions/workflows/release-macos.yml/badge.svg?event=release)](https://github.com/adregner/photo-salon/actions/workflows/release-macos.yml)
+[![Windows](https://github.com/adregner/photo-salon/actions/workflows/release-windows.yml/badge.svg?event=release)](https://github.com/adregner/photo-salon/actions/workflows/release-windows.yml)
 
 ### Linux / macOS
 

@@ -110,15 +110,16 @@ regeneration only happens on a fresh checkout or after manual deletion.
 - **`release.sh [patch|minor|major]`** — bumps from the latest GitHub release tag, creates
   a new `vX.Y.Z` release with auto-generated notes (via `gh`), and waits for the workflow
   to start.
-- **`.github/workflows/release.yml`** (triggered on release `created`):
-  1. `build` (ubuntu) — cross-compiles the **unsigned** Windows `.exe` and uploads it as an
-     artifact.
-  2. `sign-and-release` (windows) — signs with Azure Trusted Signing and uploads the
-     signed `.exe` to the release.
-  3. `build-macos` (macos) — builds/bundles/signs/notarizes the `.dmg` and uploads it.
-     Signing/notarization are skipped when the `MACOS_CERTIFICATE` secret is absent.
+- **`.github/workflows/ci.yml`** (push / pull_request on `main`): runs tests on macOS and
+  Windows (native MSVC build). Badge shows current test health.
+- **`.github/workflows/release-macos.yml`** (release `created`): installs Qt via Homebrew,
+  runs tests, then builds/bundles/signs/notarizes the `.dmg` and uploads it. Signing and
+  notarization are skipped when the `MACOS_CERTIFICATE` secret is absent.
+- **`.github/workflows/release-windows.yml`** (release `created`): runs tests on Windows
+  (native MSVC), cross-compiles the unsigned `.exe` on Linux, signs with Azure Trusted
+  Signing on Windows, and uploads the signed `.exe`.
 
-  Required secrets/variables are documented in the header comment of `release.yml`.
+  Required secrets/variables are documented in the header comments of each workflow file.
 
 ## Devcontainer
 

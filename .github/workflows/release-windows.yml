@@ -1,0 +1,146 @@
+# Tests on Windows, cross-compiles on Linux, signs on Windows, uploads to release.
+# The cross-compile build only starts after Windows tests pass.
+#
+# ── Secrets (Settings → Secrets and variables → Actions → Secrets) ───────────
+#   AZURE_TENANT_ID       — Azure AD tenant ID
+#   AZURE_CLIENT_ID       — service principal / app registration client ID
+#   AZURE_CLIENT_SECRET   — service principal client secret
+#
+# ── Variables (Settings → Secrets and variables → Actions → Variables) ───────
+#   AZURE_TRUSTED_SIGNING_ENDPOINT     — endpoint hostname, e.g. wus2.codesigning.azure.net
+#   AZURE_TRUSTED_SIGNING_ACCOUNT      — Trusted Signing account name
+#   AZURE_TRUSTED_SIGNING_CERT_PROFILE — certificate profile name
+#
+# The service principal needs the "Trusted Signing Certificate Profile Signer" role
+# on the Trusted Signing account in Azure Portal (Access control → Add role assignment).
+
+name: Windows
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Qt
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Qt
+          key: qt-windows-6.11.1-msvc2022_64
+
+      - name: Install Qt
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          pip install --quiet aqtinstall
+          aqt install-qt windows desktop 6.11.1 win64_msvc2022_64 --outputdir C:\Qt --archives icu qtbase qtconcurrent
+        shell: pwsh
+
+      - name: Configure
+        run: cmake -B _build -DCMAKE_PREFIX_PATH="C:\Qt\6.11.1\msvc2022_64"
+        shell: pwsh
+
+      - name: Build
+        run: cmake --build _build --config Release
+        shell: pwsh
+
+      - name: Test
+        run: ctest --test-dir _build --output-on-failure -C Release
+        shell: pwsh
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 19 and CMake
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y cmake clang-19 lld-19 llvm-19
+
+      # /opt is root-owned; hand off to the runner before the cache step
+      # so actions/cache can restore into it without sudo.
+      - name: Prepare Qt host directory
+        run: |
+          sudo mkdir -p /opt/qt-linux
+          sudo chown "$(id -un):$(id -gn)" /opt/qt-linux
+
+      - name: Cache Qt host tools
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/qt-linux
+          key: qt-linux-6.11.1-gcc64
+
+      - name: Install Qt host tools (moc/rcc for cross-compile)
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          pip3 install --user --quiet aqtinstall
+          export PATH="$HOME/.local/bin:$PATH"
+          aqt install-qt --outputdir /opt/qt-linux linux desktop 6.11.1 linux_gcc_64 \
+            --archives icu qtbase
+
+      - name: Cache Windows cross-compile dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            windows/msvc/include
+            windows/sdk/include
+            windows/qt-6.11
+          key: windows-cross-deps-${{ hashFiles('fetch-windows-deps.sh') }}
+
+      - name: Fetch windows deps
+        run: ./fetch-windows-deps.sh
+
+      - name: Build
+        run: ./build-windows.sh
+
+      - name: Upload unsigned exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: photo-salon-unsigned
+          path: _build_win/photo-salon.exe
+          retention-days: 1
+
+  sign-and-release:
+    runs-on: windows-latest
+    needs: build
+    environment: builder
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download unsigned exe
+        uses: actions/download-artifact@v4
+        with:
+          name: photo-salon-unsigned
+          path: to-sign
+
+      - name: Sign with Azure Trusted Signing
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id:              ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id:              ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret:          ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint:                     https://${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name:     ${{ vars.AZURE_TRUSTED_SIGNING_CERT_PROFILE }}
+          files-folder:                 to-sign
+          files-folder-filter:          exe
+          file-digest:                  SHA256
+          timestamp-rfc3161:            http://timestamp.acs.microsoft.com
+          timestamp-digest:             SHA256
+
+      - name: Upload to release
+        run: gh release upload "${{ github.ref_name }}" to-sign/photo-salon.exe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
