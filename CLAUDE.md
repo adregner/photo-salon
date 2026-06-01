@@ -1,80 +1,95 @@
 # photo-salon — Agent Instructions
 
-## Project Overview
+C++ / Qt6 desktop image viewer for in-person photography salons. Cross-platform:
+Linux, macOS (primary dev/test), and Windows 10/11. Single-window viewer with
+non-destructive edits (orientation, crop, hue-selective B&W) and a metadata overlay.
 
-C++ Qt6 desktop image viewer. Cross-platform: Linux, macOS (primary dev/test), and Windows 10/11.
+## Session start — do this first, every session
 
-## Development
-
-When starting work in a cloud container environment (e.g. `bash -c 'test -n "$CLAUDE_CONTAINER"'`), MAKE SURE `origin/main` has been pulled from the remote and is up to date, and that `main` is tracking it and on the same commit.
-
-## Build
+Sync the local checkout before any work:
 
 ```bash
-./build
+git fetch origin main
+git checkout main && git pull --ff-only origin main   # if not already on main
 ```
 
-On Linux, if Qt 6.11+ is not installed the script downloads it automatically via `fetch-linux-qt.sh`.
-On macOS, if Qt 6.11+ is not installed the script prints the `brew install qt` command and exits.
+Ensure `main` and `origin/main` point at the same latest commit and `main` tracks
+`origin/main`. If you're working on a feature branch, still fetch and fast-forward
+`main` so it's current (`git fetch origin main && git branch -f main origin/main`
+when not checked out on it). `origin/main` is occasionally force-updated, so always
+fetch rather than trusting the local ref.
 
-If `compile_commands.json` is missing or out of date, run this to create it:
+## Build · Run · Test
 
 ```bash
-cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
+./build                      # configure + build → _build/  (Release)
+./build run /path/img.jpg    # build the app target and launch it
+cd _build && ctest --output-on-failure   # run the test suite (headless)
 ```
 
-## Windows Cross-Compilation
-
-Cross-compile a static `photo-salon.exe` from macOS using `clang-cl` and `lld-link` (MSVC ABI). See `doc/WINDOWS.md` for prerequisites, directory layout, and full instructions.
-
-```bash
-./build-windows.sh
-# → _build_win/photo-salon.exe
-```
-
-## Run
-
-```bash
-./build/photo-salon /path/to/image.jpg
-```
+- Qt 6.11+ required. On Linux `./build` auto-fetches it; on macOS it prints
+  `brew install qt` and exits.
+- Tests are Qt Test binaries run with `QT_QPA_PLATFORM=offscreen` (CTest sets this).
+- Regenerate `compile_commands.json` when stale:
+  `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .`
+- Packaging, dependencies, and the release workflow: **`doc/BUILD.md`**.
+- Windows cross-compile from macOS (`./build-windows.sh`): **`doc/WINDOWS.md`**.
 
 ## Conventions
 
-- C++17
-- Qt6 only — no Qt5 compatibility shims
-- CMake build system — no qmake, no `.pro` files
-- Source files live in `src/`
-- Design specs in `docs/superpowers/specs/`
-- Implementation plans in `docs/superpowers/plans/`
-- Only use formal specs and implementation plans for more complex feature development
-- All image formats are JPG until format support is added (see ROADMAP.md)
-- When adding new features, check to see if `README.md`, `CLAUDE.md`, or `ROADMAP.md` needs to be updated to reflect the new changes
+- C++17, Qt6 only — no Qt5 shims, no qmake/`.pro` files, CMake only.
+- Source in `src/`; tests in `tests/` (link `photo-salon-lib`, not `main.cpp`).
+- Project docs in `doc/*.md`. Keep `CLAUDE.md` lean — put depth in `doc/`.
+- Loads **any format Qt's image plugins support** (JPEG primary; PNG etc. work too).
+  Folder navigation excludes `*.svg`.
+- When adding a feature, check whether `README.md`, `CLAUDE.md`, `ROADMAP.md`, and the
+  `HelpOverlay` shortcut list need updating.
 
-## Architecture
+## Architecture (summary)
 
-- `ImageViewer` (QGraphicsView subclass) — core display component; owns the scene and pixmap item
-- `MainWindow` (QMainWindow subclass) — orchestrates the display pipeline and owns all image-transform state
-- `main.cpp` — entry point; CLI arg parsing only, no business logic
+Full detail — pipeline, event routing, crop/orientation/B&W internals, metadata overlay —
+is in **`doc/ARCHITECTURE.md`**. The essentials:
 
-### Display pipeline
+- **`ImageViewer`** (`QGraphicsView`) — display + input; owns the scene and the single
+  pixmap item. It never holds transform/business state: keys it doesn't act on directly
+  become **signals**.
+- **`MainWindow`** (`QMainWindow`) — orchestrator; owns every overlay/panel and **all
+  image-transform state**, and runs the display pipeline. Wires viewer signals to handlers.
+- **`main.cpp`** — CLI parsing only. An empty path is valid (idle state).
 
-All features that modify what is shown on screen must participate in a single ordered pipeline owned by `MainWindow`. The pipeline runs in this order:
+### Display pipeline & pixmap state
 
-1. **Disk image** — loaded by `ImageViewer::loadImage()`, captured into both `MainWindow::m_diskPixmap` and `MainWindow::m_basePixmap` via the `imagePathChanged` signal.
-2. **Orientation** — R/H/V keys rotate or flip the image. `applyOrientationTransform()` updates `m_orientedDiskPixmap` (full image at current orientation) and transforms the saved crop rect into the new coordinate space before updating the crop base.
-3. **Crop** — `ImageViewer` manages the crop UI and applies the crop rect to `m_pixmapItem`. When crop exits (`cropModeChanged(false)`), `MainWindow` updates `m_basePixmap = viewer->pixmap()` (the freshly-cropped image). `setBasePixmapForCrop()` is always called with `m_orientedDiskPixmap` so that re-entering crop always shows the full oriented original — the user can expand the selection as well as shrink it.
-4. **B&W conversion** — `BwConverter::convert()` runs off the main thread via `QtConcurrent`. It always operates on `m_originalImage` (derived from `m_basePixmap`). After crop or orientation change, the handler refreshes `m_originalImage` from the new `m_basePixmap` and re-triggers conversion.
-5. **Display** — `ImageViewer::setDisplayPixmap()` swaps the pixmap in `m_pixmapItem` and refreshes the scene rect if dimensions changed (e.g. after 90° rotation).
+Features that change the screen run in one ordered pipeline owned by `MainWindow`:
+**disk → orientation → crop → B&W → display**. Three pixmap fields track state:
 
-Three pixmap fields track image state in `MainWindow`:
-- `m_diskPixmap` — the image exactly as loaded from disk. Updated only on load/navigation. **Never modified by crop, orientation, or BW.**
-- `m_orientedDiskPixmap` — `m_diskPixmap` with all rotation/flip transforms applied. This is the full-size crop base. Updated on load/navigation (equals `m_diskPixmap`) and whenever orientation changes. Always passed to `setBasePixmapForCrop()`.
-- `m_basePixmap` — `m_orientedDiskPixmap` with the current crop applied. Updated on load/navigation (equals `m_diskPixmap`), on every crop application, and on every orientation change. Used as the BW source and restored by `deactivateBw()`. **Never cleared.**
+| Field | Meaning |
+|---|---|
+| `m_diskPixmap` | Image exactly as loaded (EXIF-oriented at load). Never touched by edits. |
+| `m_orientedDiskPixmap` | Disk pixmap + rotation/flip. The full-size **crop base**. |
+| `m_basePixmap` | Oriented pixmap + crop applied. The **B&W source**; never cleared. |
 
-Any new feature that transforms the displayed image must read from `m_basePixmap` as its input and write its result back through `setDisplayPixmap()`. If the feature permanently changes image content (as crop and orientation do), it must update `m_basePixmap` accordingly. Features that are purely non-destructive display transforms (like BW) leave `m_basePixmap` unchanged.
+**New display-transform features must:** read input from `m_basePixmap`, write output via
+`ImageViewer::setDisplayPixmap()`. If the change is permanent (crop/orientation), update
+`m_basePixmap`; if non-destructive (B&W), leave it. Long-running work goes off the main
+thread (`QtConcurrent` + `QFutureWatcher`), like B&W.
 
-## Key Notes
+## Key Qt gotchas
 
-- `fitInView` must be called in both the constructor and `showEvent` — the widget has no real size until shown
-- `qt_standard_project_setup()` handles MOC automatically — do not add `CMAKE_AUTOMOC` manually
-- `setDragMode(ScrollHandDrag)` enables pan; zoom is implemented via `wheelEvent` and keyboard +/-/0
+- `fitInView` must run in **both** the constructor and `showEvent` — the widget has no real
+  size until shown.
+- `qt_standard_project_setup()` handles MOC — never add `CMAKE_AUTOMOC` manually.
+- `setDragMode(ScrollHandDrag)` enables pan; zoom is custom (`wheelEvent` + `+`/`-`/`0`).
+- `Tab`/`Backtab` are swallowed by Qt's focus machinery before `keyPressEvent`; they're
+  intercepted in `ImageViewer`'s viewport event filter. Cross-widget keys are routed to the
+  viewer by `MainWindow`'s app-wide event filter (guard re-entrancy — see
+  `doc/ARCHITECTURE.md`).
+
+## Where things live
+
+| Topic | File |
+|---|---|
+| Architecture, pipeline, event routing, feature internals | `doc/ARCHITECTURE.md` |
+| Build system, deps, tests, packaging, CI release | `doc/BUILD.md` |
+| Windows cross-compile & code signing | `doc/WINDOWS.md` |
+| End-user install / run / packaging | `README.md` |
+| Planned & researched features | `ROADMAP.md` |
