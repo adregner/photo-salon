@@ -1,0 +1,3 @@
+// Windows application resources for Photo Salon.
+// Resource ID 1 is the lowest-ID icon; Explorer uses it as the executable icon.
+1 ICON "SalonViewer.ico"

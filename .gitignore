@@ -47,7 +47,6 @@ qt-linux/
 *.lai
 *.la
 *.a
-*.lib
 
 # Executables
 *.exe

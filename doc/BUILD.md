@@ -74,6 +74,31 @@ Current suites (in `tests/`): `test_zoom`, `test_help_overlay`, `test_image_form
 | Windows (cross from macOS/Linux) | `./build-windows.sh` | `_build_win/photo-salon.exe` (static, MSVC ABI). See `doc/WINDOWS.md`. |
 | Windows (native) | `cmake -B _build -DCMAKE_PREFIX_PATH=...msvc2022_64 && cmake --build _build --config Release` | `_build/Release/photo-salon.exe`. |
 
+### Windows SDK stubs
+
+The bundled Windows SDK (`windows/sdk/lib/um/`) only includes a subset of import
+libraries. When a new Qt module or C++ library is linked in and it depends on additional
+Windows system DLLs, `build-windows.sh` will fail with `lld-link: error: could not open
+'<name>.lib'`. Fix it by adding a `mkstub` call to `fetch-windows-deps.sh`:
+
+1. **Identify missing libs** — the linker error names them explicitly.
+2. **Find the symbols needed** — scan the relevant Qt static lib:
+   ```bash
+   /opt/homebrew/opt/llvm/bin/llvm-nm windows/qt-6.11/x64/lib/Qt6<Module>.lib \
+       | grep ' U ' | grep '__imp_\|dllimport' | sort -u
+   ```
+   Also check plugin libs under `windows/qt-6.11/x64/plugins/`.
+3. **Add a `mkstub` call** in the `if [ -n "$DLLTOOL" ]` block of `fetch-windows-deps.sh`:
+   ```bash
+   mkstub <dllname> sym1 sym2 ...   # omit symbols if none are directly referenced
+   ```
+4. **Delete the stale stub** (`windows/sdk/lib/um/<name>.lib`) and re-run
+   `./build-windows.sh` to regenerate and verify.
+
+The generated stubs are checked in to `windows/sdk/lib/um/` so CI and other developers
+don't need to regenerate them. The `mkstub` function skips files that already exist, so
+regeneration only happens on a fresh checkout or after manual deletion.
+
 **Code signing is opt-in** and driven by environment variables:
 - macOS: `CODESIGN_IDENTITY`, `NOTARIZE_APPLE_ID`, `NOTARIZE_PASSWORD`, `NOTARIZE_TEAM_ID`
   (see `README.md`).
