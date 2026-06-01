@@ -25,7 +25,7 @@ cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
 
 ## Windows Cross-Compilation
 
-Cross-compile a static `photo-salon.exe` from macOS using `clang-cl` and `lld-link` (MSVC ABI). See `WINDOWS.md` for prerequisites, directory layout, and full instructions.
+Cross-compile a static `photo-salon.exe` from macOS using `clang-cl` and `lld-link` (MSVC ABI). See `doc/WINDOWS.md` for prerequisites, directory layout, and full instructions.
 
 ```bash
 ./build-windows.sh
