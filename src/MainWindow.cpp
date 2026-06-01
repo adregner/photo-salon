@@ -95,7 +95,8 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
             return;
         }
         auto data = ExifReader::read(viewer->currentPath());
-        for (auto it = imageStateData().begin(); it != imageStateData().end(); ++it)
+        const auto state = imageStateData();
+        for (auto it = state.cbegin(); it != state.cend(); ++it)
             data.insert(it.key(), it.value());
         m_exifOverlay->setData(data);
         m_exifOverlay->show();
@@ -284,7 +285,7 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             m_colorPicker->hide();
             return true;
         }
-        if (m_helpOverlay && m_helpOverlay->isVisible()) {
+        if (m_helpOverlay && m_helpOverlay->isVisible() && !m_viewer->currentPath().isEmpty()) {
             m_viewer->closeHelp();
             return true;
         }
@@ -325,6 +326,8 @@ void MainWindow::toggleFullscreen() {
         m_windowStateBeforeFullscreen = windowState();
         showFullScreen();
     }
+    if (m_viewer->currentPath().isEmpty())
+        m_viewer->setHelpVisible(true);
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
@@ -467,6 +470,10 @@ ExifReader::ExifData MainWindow::imageStateData() const {
     ExifReader::ExifData state;
     if (!edits.isEmpty())
         state["State_Edits"] = edits.join(" · ");
+    if (m_cropApplied) {
+        QSize sz = m_basePixmap.size();
+        state["CropDimensions"] = QString("(%1 × %2)").arg(sz.width()).arg(sz.height());
+    }
     return state;
 }
 

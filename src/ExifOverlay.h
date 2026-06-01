@@ -1,5 +1,6 @@
 #pragma once
 #include "ExifReader.h"
+#include <QMap>
 #include <QNetworkAccessManager>
 #include <QStringList>
 #include <QWidget>
@@ -47,4 +48,5 @@ private:
     QStringList             m_template;
     QNetworkAccessManager  *m_nam = nullptr;
     QString                 m_pendingGeoKey;
+    QMap<QString, QString>  m_geoCache;
 };

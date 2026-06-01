@@ -25,21 +25,23 @@ QStringList ExifOverlay::defaultTemplate()
     return {
         "{Camera}",
         "{LensModel}",
+        "",
         "{DateTime}",
+        "",
+        "{GPS}",
+        "{Location}",
         "",
         "{Exposure}",
         "{FocalLength}",
+        "",
         "{ExposureBias}",
         "Program: {ExposureProgram}",
         "Metering: {MeteringMode}",
         "Flash: {Flash}",
         "",
-        "{GPS}",
-        "{Location}",
-        "",
         "{Software}",
         "",
-        "{Dimensions}",
+        "{Dimensions} {CropDimensions}",
         "{FileName}  ·  {FileSize}",
         "",
         "{State_Edits}",
@@ -56,10 +58,14 @@ void ExifOverlay::setData(const ExifReader::ExifData &data)
         ? m_data["GPSLatitude"] + "," + m_data["GPSLongitude"]
         : QString{};
 
-    if (hasGps && geoKey != m_pendingGeoKey) {
-        m_pendingGeoKey = geoKey;
-        resolveLocation(m_data["GPSLatitude"].toDouble(),
-                        m_data["GPSLongitude"].toDouble());
+    if (hasGps) {
+        if (m_geoCache.contains(geoKey)) {
+            m_data["Location"] = m_geoCache[geoKey];
+        } else if (geoKey != m_pendingGeoKey) {
+            m_pendingGeoKey = geoKey;
+            resolveLocation(m_data["GPSLatitude"].toDouble(),
+                            m_data["GPSLongitude"].toDouble());
+        }
     }
 
     update();
@@ -110,7 +116,9 @@ void ExifOverlay::resolveLocation(double lat, double lon)
         if (!country.isEmpty()) parts << country;
 
         if (!parts.isEmpty()) {
-            m_data["Location"] = parts.join(", ");
+            QString location = parts.join(", ");
+            m_geoCache[capturedKey] = location;
+            m_data["Location"] = location;
             update();
         }
     });
