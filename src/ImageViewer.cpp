@@ -1,7 +1,9 @@
 #include "ImageViewer.h"
+#include "Const.h"
 #include "ImageFormats.h"
 #include <QDir>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsTextItem>
@@ -13,6 +15,7 @@
 #include <QPen>
 #include <QResizeEvent>
 #include <QShowEvent>
+#include <QTimer>
 #include <QWheelEvent>
 #include <cmath>
 
@@ -31,6 +34,15 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     // forwarded to keyPressEvent via the normal QAbstractScrollArea path; handle them
     // here before the focus machinery sees the event.
     viewport()->installEventFilter(this);
+
+    m_cropNoticeTimer = new QTimer(this);
+    m_cropNoticeTimer->setSingleShot(true);
+    m_cropNoticeTimer->setInterval(NOTICE_DURATION);
+    connect(m_cropNoticeTimer, &QTimer::timeout, this, [this] {
+        m_cropNoticeVisible = false;
+        viewport()->update();
+    });
+
     loadImage(imagePath);
 }
 
@@ -256,7 +268,15 @@ void ImageViewer::setCropMode(bool active) {
         m_activeHandle = CropHandle::None;
         setDragMode(QGraphicsView::NoDrag);
         viewport()->setCursor(Qt::ArrowCursor);
+
+        if (!m_cropNoticeShown) {
+            m_cropNoticeShown = true;
+            m_cropNoticeVisible = true;
+            m_cropNoticeTimer->start();
+        }
     } else {
+        m_cropNoticeTimer->stop();
+        m_cropNoticeVisible = false;
         // Apply crop: extract selected region from the (reloaded) original
         if (m_pixmapItem) {
             QRectF imageRect = QRectF(m_pixmapItem->pixmap().rect());
@@ -393,6 +413,20 @@ void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
     event->accept();
 }
 
+void ImageViewer::mouseDoubleClickEvent(QMouseEvent *event) {
+    if (!m_cropMode) { QGraphicsView::mouseDoubleClickEvent(event); return; }
+
+    if (event->button() == Qt::LeftButton && m_pixmapItem) {
+        if (hitTestHandle(event->pos()) != CropHandle::None) {
+            m_cropRect = QRectF(m_pixmapItem->pixmap().rect());
+            m_cropNoticeVisible = false;
+            m_cropNoticeTimer->stop();
+            viewport()->update();
+        }
+    }
+    event->accept();
+}
+
 void ImageViewer::drawForeground(QPainter *painter, const QRectF &rect) {
     QGraphicsView::drawForeground(painter, rect);
 
@@ -440,6 +474,18 @@ void ImageViewer::drawForeground(QPainter *painter, const QRectF &rect) {
     handle((vr.left() + vr.right()) / 2, vr.bottom());
     handle(vr.left(),  (vr.top() + vr.bottom()) / 2);
     handle(vr.right(), (vr.top() + vr.bottom()) / 2);
+
+    if (m_cropNoticeVisible && !vr.isEmpty()) {
+        painter->setBrush(QColor(0, 0, 0, 160));
+        painter->setPen(Qt::NoPen);
+        painter->drawRect(vr);
+
+        QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        font.setPointSize(14);
+        painter->setFont(font);
+        painter->setPen(Qt::white);
+        painter->drawText(vr, Qt::AlignCenter, QStringLiteral("Double-click to reset crop"));
+    }
 
     painter->restore();
 }

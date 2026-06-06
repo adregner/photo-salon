@@ -35,6 +35,11 @@ private slots:
     void reenterCropMode_reloadsOriginal();
     void sKeyEmitsSaveRequested();
     void setCropModeRestoresDragMode();
+    void doubleClickInCropRect_resetsCropRectToFull();
+    void doubleClickOutsideCropRect_leavesRectUnchanged();
+    void firstCropEntry_noticeIsVisible();
+    void secondCropEntry_noticeIsNotVisible();
+    void doubleClickInCropRect_dismissesNotice();
 
 private:
     QString m_imagePath;
@@ -161,6 +166,82 @@ void CropToolTest::setCropModeRestoresDragMode() {
     QCOMPARE(viewer.dragMode(), QGraphicsView::NoDrag);
     viewer.setCropMode(false);
     QCOMPARE(viewer.dragMode(), QGraphicsView::ScrollHandDrag);
+}
+
+void CropToolTest::doubleClickInCropRect_resetsCropRectToFull() {
+    ImageViewer viewer(m_imagePath); // 200x150
+    viewer.resize(400, 300);
+    viewer.show();
+    QCoreApplication::processEvents();
+
+    viewer.setCropMode(true);
+    viewer.setCropRect(QRectF(50, 37, 100, 76));
+    QCOMPARE(viewer.cropRect(), QRectF(50, 37, 100, 76));
+
+    // Double-click at the scene-center of the sub-rect (inside it)
+    QPoint vp = viewer.mapFromScene(QPointF(100, 75));
+    QTest::mouseDClick(viewer.viewport(), Qt::LeftButton, Qt::NoModifier, vp);
+
+    QSize native = viewer.nativeImageSize();
+    QCOMPARE(viewer.cropRect(), QRectF(0, 0, native.width(), native.height()));
+}
+
+void CropToolTest::doubleClickOutsideCropRect_leavesRectUnchanged() {
+    ImageViewer viewer(m_imagePath); // 200x150
+    viewer.resize(800, 600);
+    viewer.show();
+    QCoreApplication::processEvents();
+
+    viewer.setCropMode(true);
+    // Crop rect is tiny in the top-left corner of image space
+    viewer.setCropRect(QRectF(0, 0, 20, 15));
+
+    // Map a point well outside the sub-rect (bottom-right of image) to viewport
+    QPoint vp = viewer.mapFromScene(QPointF(190, 140));
+    QTest::mouseDClick(viewer.viewport(), Qt::LeftButton, Qt::NoModifier, vp);
+
+    // Crop rect should be unchanged
+    QCOMPARE(viewer.cropRect(), QRectF(0, 0, 20, 15));
+}
+
+void CropToolTest::firstCropEntry_noticeIsVisible() {
+    ImageViewer viewer(m_imagePath);
+    viewer.resize(400, 300);
+    viewer.show();
+    QCoreApplication::processEvents();
+
+    QVERIFY(!viewer.cropNoticeVisible());
+    viewer.setCropMode(true);
+    QVERIFY(viewer.cropNoticeVisible());
+}
+
+void CropToolTest::secondCropEntry_noticeIsNotVisible() {
+    ImageViewer viewer(m_imagePath);
+    viewer.resize(400, 300);
+    viewer.show();
+    QCoreApplication::processEvents();
+
+    viewer.setCropMode(true);
+    QVERIFY(viewer.cropNoticeVisible());
+    viewer.setCropMode(false);
+
+    viewer.setCropMode(true);
+    QVERIFY(!viewer.cropNoticeVisible());
+}
+
+void CropToolTest::doubleClickInCropRect_dismissesNotice() {
+    ImageViewer viewer(m_imagePath); // 200x150
+    viewer.resize(400, 300);
+    viewer.show();
+    QCoreApplication::processEvents();
+
+    viewer.setCropMode(true);
+    QVERIFY(viewer.cropNoticeVisible());
+
+    QPoint vp = viewer.mapFromScene(QPointF(100, 75));
+    QTest::mouseDClick(viewer.viewport(), Qt::LeftButton, Qt::NoModifier, vp);
+
+    QVERIFY(!viewer.cropNoticeVisible());
 }
 
 int main(int argc, char *argv[]) {

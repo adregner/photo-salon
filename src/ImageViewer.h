@@ -12,6 +12,7 @@ class QMouseEvent;
 class QPainter;
 class QResizeEvent;
 class QShowEvent;
+class QTimer;
 class QWheelEvent;
 
 class ImageViewer : public QGraphicsView {
@@ -36,6 +37,7 @@ public:
     bool cropMode() const { return m_cropMode; }
     void setCropRect(const QRectF &rect);
     QRectF cropRect() const { return m_cropRect; }
+    bool cropNoticeVisible() const { return m_cropNoticeVisible; }
 
 signals:
     void helpVisibilityChanged(bool visible);
@@ -62,6 +64,7 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
     void drawForeground(QPainter *painter, const QRectF &rect) override;
     bool focusNextPrevChild(bool) override { return false; }
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -93,4 +96,7 @@ private:
     CropHandle m_activeHandle = CropHandle::None;
     QPointF m_dragStartScene;
     QRectF m_dragStartCropRect;
+    bool m_cropNoticeShown = false;
+    bool m_cropNoticeVisible = false;
+    QTimer *m_cropNoticeTimer = nullptr;
 };
