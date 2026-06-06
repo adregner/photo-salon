@@ -29,34 +29,23 @@ jobs:
       - name: Test
         run: cd _build && ctest --output-on-failure
 
-  test-windows:
-    runs-on: windows-latest
+  test-linux:
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Cache Qt
-        id: qt-cache
         uses: actions/cache@v4
         with:
-          path: C:\Qt
-          key: qt-windows-6.11.1-msvc2022_64
+          path: /opt/qt-linux
+          key: qt-linux-6.11.1-gcc_64
 
-      - name: Install Qt
-        if: steps.qt-cache.outputs.cache-hit != 'true'
-        run: |
-          pip install --quiet aqtinstall
-          aqt install-qt windows desktop 6.11.1 win64_msvc2022_64 --outputdir C:\Qt --archives icu qtbase qtconcurrent
-        shell: pwsh
-
-      - name: Configure
-        run: cmake -B _build -DCMAKE_PREFIX_PATH="C:\Qt\6.11.1\msvc2022_64"
-        shell: pwsh
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake libgl1-mesa-dev
 
       - name: Build
-        run: cmake --build _build --config Release
-        shell: pwsh
+        run: ./build
 
       - name: Test
-        run: ctest --test-dir _build --output-on-failure -C Release
-        shell: pwsh
+        run: cd _build && ctest --output-on-failure
