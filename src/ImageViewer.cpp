@@ -476,12 +476,12 @@ void ImageViewer::drawForeground(QPainter *painter, const QRectF &rect) {
     handle(vr.right(), (vr.top() + vr.bottom()) / 2);
 
     if (m_cropNoticeVisible && !vr.isEmpty()) {
-        painter->setBrush(QColor(0, 0, 0, 160));
+        painter->setBrush(QColor(0, 0, 0, 90));
         painter->setPen(Qt::NoPen);
         painter->drawRect(vr);
 
         QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-        font.setPointSize(14);
+        font.setPointSize(36);
         painter->setFont(font);
         painter->setPen(Qt::white);
         painter->drawText(vr, Qt::AlignCenter, QStringLiteral("Double-click to reset crop"));

@@ -21,6 +21,6 @@ void ExitOverlay::paintEvent(QPaintEvent *) {
 
     const QString text = "Press \"Q\" again to exit";
 
-    QRect drawArea(width() / 3, 0, width() * 2 / 3, height());
-    p.drawText(drawArea, Qt::AlignLeft | Qt::AlignVCenter, text);
+    QRect drawArea(0, 0, width(), height());
+    p.drawText(drawArea, Qt::AlignCenter | Qt::AlignVCenter, text);
 }
