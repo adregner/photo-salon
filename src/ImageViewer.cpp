@@ -224,6 +224,23 @@ void ImageViewer::closeHelp() {
     }
 }
 
+bool ImageViewer::event(QEvent *event) {
+    // QAbstractScrollArea::event() intercepts Tab and redirects it to the viewport
+    // via a path that bypasses our keyPressEvent override. Intercept here first.
+    if (event->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent *>(event);
+        if (ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab) {
+            keyPressEvent(ke);
+            return ke->isAccepted();
+        }
+    }
+    return QGraphicsView::event(event);
+}
+
+bool ImageViewer::focusNextPrevChild(bool) {
+    return false;
+}
+
 bool ImageViewer::eventFilter(QObject *obj, QEvent *event) {
     if (obj == viewport() && event->type() == QEvent::KeyPress) {
         auto *ke = static_cast<QKeyEvent *>(event);

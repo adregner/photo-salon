@@ -66,7 +66,8 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void drawForeground(QPainter *painter, const QRectF &rect) override;
-    bool focusNextPrevChild(bool) override { return false; }
+    bool event(QEvent *event) override;
+    bool focusNextPrevChild(bool next) override;
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:

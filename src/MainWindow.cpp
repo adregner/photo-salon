@@ -307,6 +307,17 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         return false;
     }
 
+    // Tab: the viewport event filter doesn't reliably fire before Qt's focus
+    // machinery on macOS, so handle Tab at the app-filter level instead.
+    // Forward to the viewer widget (not the viewport) so that ImageViewer's
+    // focusNextPrevChild override prevents focus traversal and keyPressEvent fires.
+    if (ke->key() == Qt::Key_Tab && m_viewer && !m_forwardingKeyEvent) {
+        m_forwardingKeyEvent = true;
+        QCoreApplication::sendEvent(m_viewer, event);
+        m_forwardingKeyEvent = false;
+        return true;
+    }
+
     // Forward all other key events to the viewer when something else has focus.
     // Guard against re-entry: QGraphicsView::keyPressEvent forwards unhandled keys
     // to the scene via sendEvent, which would trigger this filter again and recurse.
