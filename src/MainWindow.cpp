@@ -166,17 +166,6 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
             m_bwDebounce->start();
     });
 
-    connect(m_bwPanel, &BwPanel::autoRequested, this, [this]() {
-        if (m_originalImage.isNull()) return;
-        QImage src = m_originalImage;
-        auto *watcher = new QFutureWatcher<BwParams>(this);
-        connect(watcher, &QFutureWatcher<BwParams>::finished, this, [this, watcher]() {
-            m_bwPanel->setParams(watcher->result());
-            watcher->deleteLater();
-        });
-        watcher->setFuture(QtConcurrent::run([src]() { return BwConverter::autoParams(src); }));
-    });
-
     connect(m_bwPanel, &BwPanel::compareToggled, this, [this](bool showOriginal) {
         m_bwComparing = showOriginal;
         m_bwPanel->setComparing(m_bwComparing);

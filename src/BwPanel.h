@@ -2,6 +2,7 @@
 #include "BwConverter.h"
 #include <QWidget>
 
+class QButtonGroup;
 class QEnterEvent;
 class QLabel;
 class QPushButton;
@@ -20,7 +21,6 @@ public:
 
 signals:
     void paramsChanged(const BwParams &p);
-    void autoRequested();
     void compareToggled(bool showOriginal);
     void resetToColorRequested();
 
@@ -31,19 +31,23 @@ protected:
     void hideEvent(QHideEvent *event) override;
 
 private:
-    void applyPreset(const BwParams &p);
+    void selectLook(BwLook look);
     void onAnySliderChanged();
+    void updateValueLabels();
     void updateDismissTimer();
 
-    struct BandRow {
+    struct SliderRow {
         QSlider *slider;
         QLabel  *valueLabel;
     };
 
-    BandRow      m_bands[6];
-    QPushButton *m_compareBtn = nullptr;
-    QPushButton *m_resetBtn   = nullptr;
-    QTimer      *m_dismissTimer = nullptr;
-    bool         m_mouseOver = false;
-    bool         m_inhibitSignal = false;
+    BwLook        m_look = BwLook::Neutral;
+    QButtonGroup *m_lookGroup = nullptr;
+    SliderRow     m_bands[6];
+    SliderRow     m_contrast{};
+    QPushButton  *m_compareBtn = nullptr;
+    QPushButton  *m_resetBtn   = nullptr;
+    QTimer       *m_dismissTimer = nullptr;
+    bool          m_mouseOver = false;
+    bool          m_inhibitSignal = false;
 };

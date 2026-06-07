@@ -15,8 +15,8 @@ this file has the detail. All source lives in `src/`.
 | `ExifReader` | namespace | Reads file info + EXIF (via `easyexif`) into a `QMap<QString,QString>` of preformatted strings. |
 | `ExitOverlay` | `QWidget` | "Press Q again to exit" overlay shown during the quit debounce window. |
 | `BackgroundColorPicker` | `QWidget` | Grey-value (0–255) slider for the viewport background. Auto-dismisses. |
-| `BwPanel` | `QWidget` (Tool) | Black-&-white control panel: presets, six hue-band sliders, Compare, Reset. Auto-dismisses. |
-| `BwConverter` | namespace | Off-thread B&W conversion and auto-parameter estimation. |
+| `BwPanel` | `QWidget` (Tool) | Black-&-white control panel: seven look buttons, six hue-band sliders, a contrast slider, Compare, Reset. Auto-dismisses. |
+| `BwConverter` | namespace | Off-thread B&W conversion: named "looks" (channel weights + tonal curve) plus hue-band and contrast adjustments. |
 | `ImageFormats` | free fns | Supported-extension globs, file-dialog filter, CLI path resolution. |
 | `OpenDialog` | free fn | `showOpenDialog()` — native open dialog. macOS uses `NSOpenPanel` (`.mm`); Linux/Windows use `QFileDialog`. |
 | `Const.h` | — | `PANEL_DISMISS = 7500 ms`, `EXIT_DEBOUNCE = 1200 ms`. |
@@ -141,23 +141,41 @@ transform (like B&W), leave `m_basePixmap` alone.
 
 ## Black & white conversion
 
-**Algorithm (`BwConverter::convert`)** — works in linear light:
-1. Convert source to `Format_RGBX32FPx4` in `SRgbLinear` via `QColorSpace` /
-   `QColorTransform` (`toLinearFloat()`).
-2. Per pixel: `lum = 0.2126 R + 0.7152 G + 0.0722 B`; compute HSV hue & saturation.
-3. `hueAdjustment()` interpolates between the six band sliders
-   (Reds, Yellows, Greens, Cyans, Blues, Magentas — one per 60° of hue).
-4. `output = clamp(lum + adjustment·saturation, 0, 1)` → `Format_Grayscale16`.
+The model is a set of named **looks** (conversion techniques), each tunable with six
+hue-band sliders and a contrast slider. A look is defined by `LookDef` in
+`BwConverter.cpp`: channel weights `wR,wG,wB` (sum 1), whether they mix in linear light
+or on gamma-encoded values (`gammaMix`), and a tonal curve (black point, highlight
+shoulder, output floor, default contrast).
 
-So saturated colors are pushed lighter/darker per the band sliders while neutral tones
-are untouched — a hue-selective channel mixer.
+| Look | Character |
+|---|---|
+| **Neutral** | BT.709 luminance in linear light. Accurate, even, flat. The baseline. |
+| **Photoshop** | Photoshop "Black & White" default mix (≈40/40/20), gamma space, mild S-curve. |
+| **iPhone** | Punchy phone look: deep black point, strong S-curve, highlight shoulder. |
+| **Monochrom** | Panchromatic-sensor weights (red-leaning, linear) + gentle shoulder — Leica Monochrom-style wide, true luminance. |
+| **Classic** | Rec.601 luma (0.299/0.587/0.114), gamma space, no curve. |
+| **Film** | Tri-X/Ilford curve: lifted toe (no pure black), rolled highlights, mid contrast. |
+| **High Contrast** | Strong S-curve, crushed blacks, bright whites. |
 
-**Auto (`BwConverter::autoParams`)** computes the mean luminance of saturated pixels in
-each hue band and suggests slider values that nudge each band toward mid-grey.
+**Algorithm (`BwConverter::convert`)**:
+1. Decode the source to `Format_RGBX32FPx4` linear-light float (`toLinearFloat()`), and
+   derive the gamma-encoded `R'G'B'` per pixel.
+2. **Base grey** (perceptual/sRGB space): a luminance look weights the linear RGB then
+   re-encodes to sRGB; a luma look (`gammaMix`) weights the gamma-encoded RGB directly.
+3. **Hue-band adjustment**: `hueAdjustment()` interpolates the six band sliders
+   (Reds…Magentas, one per 60° of hue); `grey += adjustment·saturation` (neutral tones,
+   saturation 0, are untouched).
+4. **Tonal curve** (`applyTone`): black-point crush → logistic S-curve (the contrast
+   slider, ±) → highlight shoulder → output floor.
+5. Store as `Format_Grayscale16`.
+
+The key correctness point: the grey is **gamma-encoded (sRGB) before storage**, so a
+mid-luminance colour reads as a mid grey rather than a too-dark raw-linear value. The hot
+loop is kept free of `pow`/`exp` by two per-image LUTs (linear→sRGB, and the full tonal
+curve, which is a pure function of the grey value).
 
 **Threading & state (`MainWindow`):**
-- `convert()` and `autoParams()` run via `QtConcurrent::run` + `QFutureWatcher`; the UI
-  never blocks.
+- `convert()` runs via `QtConcurrent::run` + `QFutureWatcher`; the UI never blocks.
 - `m_bwDebounce` (50 ms) coalesces slider drags; if a conversion is already running it
   reschedules.
 - `m_originalImage = m_basePixmap.toImage()` is the cached source; `m_lastBwPixmap` is the
@@ -168,9 +186,10 @@ each hue band and suggests slider values that nudge each band toward mid-grey.
 - `deactivateBw()` restores `m_basePixmap`, clears the B&W caches (but **not**
   `m_basePixmap`), and hides the panel. It's called on every image load/navigation.
 
-**`BwPanel`** is a frameless translucent `Qt::Tool` widget docked bottom-left. Presets:
-Neutral, Yellow #8, Orange #15, Red A #25, Deep Red #29, Green #58, Infrared, Auto. Six
-sliders range −100…100. It emits `paramsChanged` / `autoRequested` / `compareToggled` /
+**`BwPanel`** is a frameless translucent `Qt::Tool` widget docked bottom-left. Seven look
+buttons (exclusive `QButtonGroup`) sit above six hue-band sliders and a contrast slider,
+all −100…100. Picking a look calls `BwConverter::lookPreset()` to load its defaults (bands
+zeroed, the look's own contrast). It emits `paramsChanged` / `compareToggled` /
 `resetToColorRequested`. Like the color picker, it auto-hides after `PANEL_DISMISS` unless
 hovered or focused.
 
