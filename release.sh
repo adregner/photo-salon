@@ -29,24 +29,41 @@ gh release create "$new_tag" \
   --title "$new_version" \
   --generate-notes
 
-echo "Release ${new_tag} created. Waiting for Release workflow run..."
+echo "Release ${new_tag} created. Waiting for Release workflow runs..."
 
 repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 wait_limit=30
+macos_url=""
+windows_url=""
 
 for i in $(seq 1 $wait_limit); do
-  run=$(gh run list \
-    --repo "$repo" \
-    --workflow "release.yml" \
-    --limit 5 \
-    --json databaseId,createdAt,headBranch,event,url,status \
-    --jq "[.[] | select(.event == \"release\" and .headBranch == \"${new_tag}\")] | sort_by(.createdAt) | last")
+  if [[ -z "$macos_url" ]]; then
+    run=$(gh run list \
+      --repo "$repo" \
+      --workflow "release-macos.yml" \
+      --limit 5 \
+      --json createdAt,headBranch,event,url \
+      --jq "[.[] | select(.event == \"release\" and .headBranch == \"${new_tag}\")] | sort_by(.createdAt) | last")
+    if [[ -n "$run" && "$run" != "null" ]]; then
+      macos_url=$(echo "$run" | python3 -c "import sys,json; print(json.load(sys.stdin)['url'])")
+      echo "macOS workflow run: ${macos_url}"
+    fi
+  fi
 
-  if [[ -n "$run" && "$run" != "null" ]]; then
-    run_url=$(echo "$run" | python3 -c "import sys,json; print(json.load(sys.stdin)['url'])")
-    created_at=$(echo "$run" | python3 -c "import sys,json; print(json.load(sys.stdin)['createdAt'])")
-    echo "Workflow run started (created ${created_at}):"
-    echo "  ${run_url}"
+  if [[ -z "$windows_url" ]]; then
+    run=$(gh run list \
+      --repo "$repo" \
+      --workflow "release-windows.yml" \
+      --limit 5 \
+      --json createdAt,headBranch,event,url \
+      --jq "[.[] | select(.event == \"release\" and .headBranch == \"${new_tag}\")] | sort_by(.createdAt) | last")
+    if [[ -n "$run" && "$run" != "null" ]]; then
+      windows_url=$(echo "$run" | python3 -c "import sys,json; print(json.load(sys.stdin)['url'])")
+      echo "Windows workflow run: ${windows_url}"
+    fi
+  fi
+
+  if [[ -n "$macos_url" && -n "$windows_url" ]]; then
     exit 0
   fi
 
@@ -54,6 +71,7 @@ for i in $(seq 1 $wait_limit); do
   sleep 0.4
 done
 
-echo "Timed out waiting for workflow run. Check manually:" >&2
-echo "  https://github.com/${repo}/actions/workflows/release.yml" >&2
+echo "Timed out waiting for workflow runs. Check manually:" >&2
+echo "  https://github.com/${repo}/actions/workflows/release-macos.yml" >&2
+echo "  https://github.com/${repo}/actions/workflows/release-windows.yml" >&2
 exit 1
