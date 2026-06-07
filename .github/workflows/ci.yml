@@ -14,14 +14,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Homebrew Qt bottles
+      - name: Install cmake, uv
+        run: brew install cmake uv
+
+      - name: Cache Qt
+        id: qt-cache
         uses: actions/cache@v4
         with:
-          path: ~/Library/Caches/Homebrew/downloads
-          key: homebrew-qt-${{ runner.arch }}-6.x
+          path: ~/qt-mac
+          key: qt-mac-6.11.1-${{ runner.arch }}
 
-      - name: Install Qt and CMake
-        run: brew install qt cmake
+      - name: Install Qt
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          uv tool run --from aqtinstall aqt install-qt --outputdir ~/qt-mac mac desktop 6.11.1 macos --archives icu qtbase
+
+      - name: Add Qt to PATH
+        run: echo "$HOME/qt-mac/6.11.1/macos/bin" >> $GITHUB_PATH
 
       - name: Build
         run: ./build

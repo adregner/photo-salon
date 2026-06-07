@@ -83,8 +83,10 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     m_helpOverlay->resize(size());
     m_helpOverlay->raise();
     connect(viewer, &ImageViewer::helpVisibilityChanged, m_helpOverlay, &QWidget::setVisible);
-    if (imagePath.isEmpty())
+    if (imagePath.isEmpty()) {
         viewer->setHelpVisible(true);
+        QTimer::singleShot(0, this, &MainWindow::openFile);
+    }
 
     m_exifOverlay = new ExifOverlay(this);
     m_exifOverlay->resize(size());
