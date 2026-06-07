@@ -59,6 +59,7 @@ Build/
 build-*/
 
 # CMake generated files
+src/version.h
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake

@@ -20,6 +20,25 @@ FetchContent_Declare(easyexif
 )
 FetchContent_MakeAvailable(easyexif)
 
+# Build-time version info — generates version.h in the cmake binary dir
+find_package(Git QUIET)
+set(GIT_COMMIT "")
+if(Git_FOUND)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_COMMIT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+set(RELEASE_TAG "")
+if(DEFINED ENV{GITHUB_ACTIONS} AND "$ENV{GITHUB_REF_TYPE}" STREQUAL "tag")
+    set(RELEASE_TAG "$ENV{GITHUB_REF_NAME}")
+endif()
+string(TIMESTAMP BUILD_EPOCH "%s" UTC)
+configure_file(src/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/version.h" @ONLY)
+
 add_library(photo-salon-lib STATIC
     src/MainWindow.cpp
     src/ImageViewer.cpp
@@ -44,6 +63,7 @@ target_include_directories(photo-salon-lib PRIVATE ${easyexif_SOURCE_DIR})
 target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets Qt6::Concurrent Qt6::Network)
 
 qt_add_executable(photo-salon src/main.cpp)
+target_include_directories(photo-salon PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(photo-salon PRIVATE photo-salon-lib)
 if(WIN32)
     set_target_properties(photo-salon PROPERTIES WIN32_EXECUTABLE TRUE)
