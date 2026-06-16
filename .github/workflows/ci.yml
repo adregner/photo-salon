@@ -27,7 +27,9 @@ jobs:
       - name: Install Qt
         if: steps.qt-cache.outputs.cache-hit != 'true'
         run: |
-          uv tool run --from aqtinstall aqt install-qt --outputdir ~/qt-mac mac desktop 6.11.1 macos --archives icu qtbase
+          pip3 install --user --quiet aqtinstall
+          export PATH="$HOME/.local/bin:$PATH"
+          aqt install-qt --outputdir ~/qt-mac mac desktop 6.11.1 macos --archives icu qtbase
 
       - name: Add Qt to PATH
         run: echo "$HOME/qt-mac/6.11.1/macos/bin" >> $GITHUB_PATH

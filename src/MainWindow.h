@@ -38,6 +38,7 @@ private:
     void applyOrientationTransform(const QTransform &t);
     void exitApplication();
     void openFile();
+    void updateExternalEditorName();
     ExifReader::ExifData imageStateData() const;
 
     ImageViewer *m_viewer = nullptr;

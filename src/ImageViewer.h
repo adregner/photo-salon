@@ -55,6 +55,8 @@ signals:
     void exitRequested();
     void openFileRequested();
     void exifRequested();
+    void openExternalRequested(bool useOriginal);
+    void openExternalPickerRequested();
 
 protected:
     void showEvent(QShowEvent *event) override;

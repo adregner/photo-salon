@@ -70,6 +70,10 @@ void ImageViewer::loadImage(const QString &path) {
         m_fitted = true;
         fitImage();
     }
+    if (!path.isEmpty() && m_helpVisible) {
+        m_helpVisible = false;
+        emit helpVisibilityChanged(false);
+    }
     emit imagePathChanged(m_imagePath);
 }
 
@@ -195,6 +199,19 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         break;
     case Qt::Key_I:
         emit exifRequested();
+        event->accept();
+        break;
+    case Qt::Key_P:
+        // On macOS Qt maps physical Ctrl → MetaModifier; Cmd → ControlModifier.
+        // Check MetaModifier on macOS so Ctrl+P means the physical Control key everywhere.
+#ifdef Q_OS_MACOS
+        if (event->modifiers() & Qt::MetaModifier)
+#else
+        if (event->modifiers() & Qt::ControlModifier)
+#endif
+            emit openExternalPickerRequested();
+        else
+            emit openExternalRequested(event->modifiers() & Qt::ShiftModifier);
         event->accept();
         break;
     default:

@@ -75,3 +75,9 @@ target_compile_definitions(test_exif_reader PRIVATE
 add_test(NAME test_exif_reader COMMAND test_exif_reader)
 set_tests_properties(test_exif_reader PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(test_external_launch test_external_launch.cpp)
+target_link_libraries(test_external_launch PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_external_launch COMMAND test_external_launch)
+set_tests_properties(test_external_launch PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -63,7 +63,7 @@ QT_QPA_PLATFORM=offscreen ./_build/tests/test_crop_tool
 
 Current suites (in `tests/`): `test_zoom`, `test_help_overlay`, `test_image_formats`,
 `test_folder_navigation`, `test_open_folder`, `test_fullscreen`, `test_background_color`,
-`test_crop_tool`, `test_bw_converter`, `test_exif_reader`. New tests link
+`test_crop_tool`, `test_bw_converter`, `test_exif_reader`, `test_external_launch`. New tests link
 `photo-salon-lib` + `Qt6::Test` and should set the offscreen platform property.
 
 ## Packaging

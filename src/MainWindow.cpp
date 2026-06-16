@@ -5,6 +5,7 @@
 #include "Const.h"
 #include "ExifOverlay.h"
 #include "ExifReader.h"
+#include "ExternalLauncher.h"
 #include "HelpOverlay.h"
 #include "ExitOverlay.h"
 #include "ImageFormats.h"
@@ -21,6 +22,7 @@
 #include <QResizeEvent>
 #include <QPalette>
 #include <QScreen>
+#include <QSettings>
 #include <QPushButton>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrent>
@@ -82,6 +84,7 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     m_helpOverlay = new HelpOverlay(this);
     m_helpOverlay->resize(size());
     m_helpOverlay->raise();
+    updateExternalEditorName();
     connect(viewer, &ImageViewer::helpVisibilityChanged, m_helpOverlay, &QWidget::setVisible);
     if (imagePath.isEmpty()) {
         viewer->setHelpVisible(true);
@@ -141,6 +144,31 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
 
         if (!display.save(savePath))
             QMessageBox::critical(this, "Save", QString("Failed to save: %1").arg(savePath));
+    });
+
+    connect(viewer, &ImageViewer::openExternalRequested, this, [this, viewer](bool useOriginal) {
+        if (useOriginal) {
+            QString path = viewer->currentPath();
+            if (path.isEmpty()) return;
+            if (openInExternalApp(path, this))
+                updateExternalEditorName();
+        } else {
+            QPixmap display = viewer->currentDisplayPixmap();
+            if (display.isNull()) return;
+            QString tempPath = QDir::tempPath() + "/photo-salon-export.png";
+            if (!display.save(tempPath, "PNG")) return;
+            if (openInExternalApp(tempPath, this))
+                updateExternalEditorName();
+        }
+    });
+
+    connect(viewer, &ImageViewer::openExternalPickerRequested, this, [this, viewer]() {
+        QPixmap display = viewer->currentDisplayPixmap();
+        if (display.isNull()) return;
+        QString tempPath = QDir::tempPath() + "/photo-salon-export.png";
+        if (!display.save(tempPath, "PNG")) return;
+        if (openInExternalApp(tempPath, this, /*forcePick=*/true))
+            updateExternalEditorName();
     });
 
     m_bwDebounce = new QTimer(this);
@@ -492,4 +520,10 @@ void MainWindow::openFile() {
     QString resolved = resolveImagePath(selected);
     if (!resolved.isEmpty())
         m_viewer->loadImage(resolved);
+}
+
+void MainWindow::updateExternalEditorName() {
+    QString path = QSettings().value(QStringLiteral("externalEditor/appPath")).toString();
+    m_helpOverlay->setExternalEditorName(
+        path.isEmpty() ? QString{} : QFileInfo(path).baseName());
 }

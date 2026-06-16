@@ -10,6 +10,11 @@ HelpOverlay::HelpOverlay(QWidget *parent)
     hide();
 }
 
+void HelpOverlay::setExternalEditorName(const QString &name) {
+    m_externalEditorName = name;
+    update();
+}
+
 void HelpOverlay::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.fillRect(rect(), QColor(0, 0, 0, 128));
@@ -20,7 +25,15 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
     p.setFont(font);
     p.setPen(Qt::white);
 
+    QString openLabel = m_externalEditorName.isEmpty()
+        ? QStringLiteral("Photoshop / external editor")
+        : m_externalEditorName;
+    QString openOrigLabel = m_externalEditorName.isEmpty()
+        ? QStringLiteral("external editor")
+        : m_externalEditorName;
+
     const QString text =
+        QStringLiteral(
         "Keyboard Shortcuts\n"
         "\n"
         "  View:\n"
@@ -36,11 +49,14 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "\n"
         "  C    Crop mode\n"
         "  W    Black & white conversion\n"
+        "  \\    Compare original color image\n"
         "  R    Rotate 90° clockwise\n"
         "  H    Flip horizontal\n"
         "  V    Flip vertical\n"
         "  S    Save current image\n"
-        "  \\    Compare original image\n"
+        "  P    Open in ") + openLabel + QStringLiteral("\n"
+        "  Shift+P  Open original file in ") + openOrigLabel + QStringLiteral("\n"
+        "  Ctrl+P   Choose external editor\n"
         "\n"
         "  Navigate:\n"
         "\n"
@@ -56,7 +72,7 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "Mouse Controls\n"
         "\n"
         "  Double Click    Reset crop (in crop-mode)\n"
-        "  Scroll wheel    Zoom (anchored to cursor)";
+        "  Scroll wheel    Zoom (anchored to cursor)");
 
     // Left-align at 1/3 width so monospace columns stay intact; center vertically
     QRect drawArea(width() / 3, 0, width() * 2 / 3, height());

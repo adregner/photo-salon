@@ -58,6 +58,13 @@ if(APPLE)
 else()
     target_sources(photo-salon-lib PRIVATE src/OpenDialog.cpp)
 endif()
+
+if(APPLE)
+    target_sources(photo-salon-lib PRIVATE src/ExternalLauncher.mm)
+else()
+    target_sources(photo-salon-lib PRIVATE src/ExternalLauncher.cpp)
+endif()
+
 target_include_directories(photo-salon-lib PUBLIC src)
 target_include_directories(photo-salon-lib PRIVATE ${easyexif_SOURCE_DIR})
 target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets Qt6::Concurrent Qt6::Network)
