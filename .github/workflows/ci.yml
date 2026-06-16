@@ -14,8 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cmake, uv
-        run: brew install cmake uv
+      - name: Install cmake
+        run: brew install cmake
 
       - name: Cache Qt
         id: qt-cache
@@ -27,12 +27,14 @@ jobs:
       - name: Install Qt
         if: steps.qt-cache.outputs.cache-hit != 'true'
         run: |
-          pip3 install --user --quiet aqtinstall
-          export PATH="$HOME/.local/bin:$PATH"
-          aqt install-qt --outputdir ~/qt-mac mac desktop 6.11.1 macos --archives icu qtbase
+          python3 -m venv "$RUNNER_TEMP/aqt-venv"
+          "$RUNNER_TEMP/aqt-venv/bin/pip" install --upgrade pip
+          "$RUNNER_TEMP/aqt-venv/bin/pip" install --quiet aqtinstall
+          ARCH=$("$RUNNER_TEMP/aqt-venv/bin/aqt" list-qt mac desktop --arch 6.11.1 | awk '{print $1}')
+          "$RUNNER_TEMP/aqt-venv/bin/aqt" install-qt --outputdir ~/qt-mac mac desktop 6.11.1 "$ARCH" --archives icu qtbase
 
       - name: Add Qt to PATH
-        run: echo "$HOME/qt-mac/6.11.1/macos/bin" >> $GITHUB_PATH
+        run: echo "$(echo $HOME/qt-mac/6.11.1/*/bin)" >> $GITHUB_PATH
 
       - name: Build
         run: ./build

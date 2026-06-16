@@ -71,9 +71,9 @@ jobs:
       - name: Install Qt host tools (moc/rcc for cross-compile)
         if: steps.qt-cache.outputs.cache-hit != 'true'
         run: |
-          pip3 install --user --quiet aqtinstall
-          export PATH="$HOME/.local/bin:$PATH"
-          aqt install-qt --outputdir /opt/qt-linux linux desktop 6.11.1 linux_gcc_64 \
+          python3 -m venv "$RUNNER_TEMP/aqt-venv"
+          "$RUNNER_TEMP/aqt-venv/bin/pip" install --quiet aqtinstall
+          "$RUNNER_TEMP/aqt-venv/bin/aqt" install-qt --outputdir /opt/qt-linux linux desktop 6.11.1 linux_gcc_64 \
             --archives icu qtbase
 
       - name: Cache Windows cross-compile dependencies

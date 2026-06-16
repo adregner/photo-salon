@@ -1,13 +1,13 @@
 find_package(Qt6 REQUIRED COMPONENTS Test Widgets)
 
 # exif-py ships a large set of real-camera JPEG samples used to verify ExifReader.
-# Pinned to a known-good commit; set FETCHCONTENT_UPDATES_DISCONNECTED to skip
-# re-fetching on every configure once downloaded.
+# Pinned to a release tag (immutable + works with GIT_SHALLOW); set
+# FETCHCONTENT_UPDATES_DISCONNECTED to skip re-fetching on every configure.
 include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED_EXIF_PY_SAMPLES ON)
 FetchContent_Declare(exif_py_samples
     GIT_REPOSITORY https://github.com/ianare/exif-py.git
-    GIT_TAG        2adb9d14a60546adc6620f12b31907a025c5045d
+    GIT_TAG        3.5.1
     GIT_SHALLOW    ON
 )
 FetchContent_MakeAvailable(exif_py_samples)
