@@ -19,6 +19,16 @@
 #include <QWheelEvent>
 #include <cmath>
 
+namespace {
+// Crop overlay geometry. Grab targets are derived from the border line width so
+// the catch area scales with the visual lines: the user can grab an edge from
+// ±7.5x the line width away, and corners get a larger square catch radius.
+constexpr qreal kCropLineWidth  = 2.0;                       // border stroke (viewport px)
+constexpr int   kCropEdgeGrab   = int(7.5 * kCropLineWidth); // edge grab distance (= 15)
+constexpr int   kCropCornerGrab = int(12  * kCropLineWidth); // corner grab distance (= 24)
+constexpr int   kCropHandleSize = 12;                        // corner/edge handle square (px)
+}
+
 ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     : QGraphicsView(parent)
     , m_scene(new QGraphicsScene(this))
@@ -352,8 +362,8 @@ ImageViewer::CropHandle ImageViewer::hitTestHandle(const QPoint &vp) const {
     if (!m_cropRect.isValid() || m_cropRect.isEmpty()) return CropHandle::None;
 
     QRect vr = mapFromScene(m_cropRect).boundingRect();
-    const int E = 8;   // edge grab distance in viewport pixels
-    const int C = 14;  // corner grab distance in viewport pixels
+    const int E = kCropEdgeGrab;   // edge grab distance in viewport pixels
+    const int C = kCropCornerGrab; // corner grab distance in viewport pixels
 
     // Corners take priority
     if (qAbs(vp.x() - vr.left())  <= C && qAbs(vp.y() - vr.top())    <= C) return CropHandle::TopLeft;
@@ -488,11 +498,11 @@ void ImageViewer::drawForeground(QPainter *painter, const QRectF &rect) {
 
     // Border
     painter->setBrush(Qt::NoBrush);
-    painter->setPen(QPen(Qt::white, 1.5));
+    painter->setPen(QPen(Qt::white, kCropLineWidth));
     painter->drawRect(vr);
 
     // Handles at corners and edge midpoints
-    const int H = 8, H2 = 4;
+    const int H = kCropHandleSize, H2 = kCropHandleSize / 2;
     painter->setBrush(Qt::white);
     painter->setPen(QPen(Qt::black, 1));
 
