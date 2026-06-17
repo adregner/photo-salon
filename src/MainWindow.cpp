@@ -519,9 +519,21 @@ ExifReader::ExifData MainWindow::imageStateData() const {
     ExifReader::ExifData state;
     if (!edits.isEmpty())
         state["State_Edits"] = edits.join(" · ");
-    if (m_cropApplied) {
-        QSize sz = m_basePixmap.size();
-        state["CropDimensions"] = QString("(%1 × %2)").arg(sz.width()).arg(sz.height());
+
+    // Original dimensions, taken from the in-memory image as loaded (EXIF-oriented),
+    // so they are always present and match what the user sees. This overrides the
+    // un-oriented header size from QImageReader::size() and survives any edit —
+    // after a crop the overlay still shows the original size, not just the crop.
+    if (!m_diskPixmap.isNull()) {
+        QSize orig = m_diskPixmap.size();
+        state["Dimensions"] = QString("%1 × %2").arg(orig.width()).arg(orig.height());
+    }
+    // Current dimensions, shown only once an edit changes them — a crop, or a
+    // 90°/270° rotation that swaps width and height.
+    if (!m_diskPixmap.isNull() && !m_basePixmap.isNull()
+        && m_basePixmap.size() != m_diskPixmap.size()) {
+        QSize cur = m_basePixmap.size();
+        state["CurrentDimensions"] = QString("→ %1 × %2").arg(cur.width()).arg(cur.height());
     }
     return state;
 }

@@ -93,3 +93,9 @@ target_link_libraries(test_external_launch PRIVATE Qt6::Test photo-salon-lib)
 add_test(NAME test_external_launch COMMAND test_external_launch)
 set_tests_properties(test_external_launch PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(test_main_window test_main_window.cpp)
+target_link_libraries(test_main_window PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_main_window COMMAND test_main_window)
+set_tests_properties(test_main_window PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

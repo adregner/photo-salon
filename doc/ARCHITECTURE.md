@@ -215,8 +215,10 @@ lat/long so repeat views don't refetch. Stale replies are dropped by comparing a
 `m_pendingGeoKey`.
 
 **Live edit state:** `MainWindow::imageStateData()` injects a `{State_Edits}` summary
-(`90° rotation · H flip · crop · B&W`) and `{CropDimensions}` into the data before the
-overlay is shown, so the overlay reflects in-memory edits, not just the file's EXIF.
+(`90° rotation · H flip · crop · B&W`), authoritative `{Dimensions}` (the EXIF-oriented
+size as loaded, so it is always present and correct after edits), and `{CurrentDimensions}`
+(the edited size, shown only when it differs) into the data before the overlay is shown,
+so the overlay reflects in-memory edits, not just the file's EXIF.
 
 ## Image format support
 
