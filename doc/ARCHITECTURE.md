@@ -116,11 +116,12 @@ transform (like B&W), leave `m_basePixmap` alone.
   from disk if unset), so the user always sees the **full oriented original** and can
   *expand* a previous selection as well as shrink it. Initializes/clamps `m_cropRect`,
   fits, disables `ScrollHandDrag`.
-- **Interaction**: `hitTestHandle()` maps a viewport point to a corner (14 px grab),
-  edge (8 px grab, anywhere along the edge), interior (move), or none.
-  `mouseMoveEvent` resizes/moves `m_cropRect` (normalized, clamped to the image).
-  `drawForeground()` paints the dark mask over excluded regions (scene coords) plus a
-  white border and eight handles (viewport coords).
+- **Interaction**: `hitTestHandle()` maps a viewport point to a corner (24 px grab),
+  edge (15 px grab ≈ ±7.5× the border line width, anywhere along the edge), interior
+  (move), or none. The grab distances and handle size derive from `kCropLineWidth`
+  (top of `ImageViewer.cpp`). `mouseMoveEvent` resizes/moves `m_cropRect` (normalized,
+  clamped to the image). `drawForeground()` paints the dark mask over excluded regions
+  (scene coords) plus a white border and eight handles (viewport coords).
 - **Exit/apply** (`setCropMode(false)`): copies the selected rect out of the current
   pixmap and sets it on the item, then emits `cropModeChanged(false)`. `MainWindow` then
   sets `m_basePixmap = viewer->pixmap()`, re-arms the crop base to `m_orientedDiskPixmap`,

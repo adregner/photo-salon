@@ -3,8 +3,26 @@
 #include <QDir>
 #include <QFile>
 #include <QImage>
+#include <QMouseEvent>
 #include <QTemporaryFile>
 #include "ImageViewer.h"
+
+// Drag from one viewport point to another with the left button held. Events are
+// sent directly (with explicit button state) so the press/move/release sequence
+// is deterministic regardless of the virtual cursor position.
+static void dragOnViewport(QWidget *vp, const QPoint &from, const QPoint &to) {
+    const QPointF gFrom = vp->mapToGlobal(from);
+    const QPointF gTo   = vp->mapToGlobal(to);
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(from), gFrom,
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    qApp->sendEvent(vp, &press);
+    QMouseEvent move(QEvent::MouseMove, QPointF(to), gTo,
+                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    qApp->sendEvent(vp, &move);
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(to), gTo,
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    qApp->sendEvent(vp, &release);
+}
 
 static QString makeTempImage(QObject *parent) {
     // Use absolute path template: relative templates fail on some Qt/macOS configs.
@@ -40,6 +58,7 @@ private slots:
     void firstCropEntry_noticeIsVisible();
     void secondCropEntry_noticeIsNotVisible();
     void doubleClickInCropRect_dismissesNotice();
+    void cornerHandle_grabbableFromOutsideTheRect();
 
 private:
     QString m_imagePath;
@@ -242,6 +261,27 @@ void CropToolTest::doubleClickInCropRect_dismissesNotice() {
     QTest::mouseDClick(viewer.viewport(), Qt::LeftButton, Qt::NoModifier, vp);
 
     QVERIFY(!viewer.cropNoticeVisible());
+}
+
+// The corner handles have a generous catch radius, so the user can grab a
+// corner from a little outside the crop rectangle (here, 15 px diagonally out).
+void CropToolTest::cornerHandle_grabbableFromOutsideTheRect() {
+    ImageViewer viewer(m_imagePath); // 200x150
+    viewer.resize(400, 300);
+    viewer.show();
+    QCoreApplication::processEvents();
+
+    viewer.setCropMode(true);
+    viewer.setCropRect(QRectF(50, 30, 100, 60));
+
+    // Top-left corner in viewport space, then a press point just outside it.
+    QPoint corner = viewer.mapFromScene(QPointF(50, 30));
+    QPoint grabFrom = corner - QPoint(15, 15);
+    QPoint dragTo   = corner + QPoint(20, 16);
+    dragOnViewport(viewer.viewport(), grabFrom, dragTo);
+
+    // The top-left corner moved, so the handle was grabbed from outside the rect.
+    QVERIFY(viewer.cropRect().topLeft() != QPointF(50, 30));
 }
 
 int main(int argc, char *argv[]) {
