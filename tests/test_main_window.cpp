@@ -3,10 +3,14 @@
 // centralWidget(), and edit state is inspected via imageStateData().
 #include <QtTest/QtTest>
 #include <QApplication>
+#include <QDialog>
 #include <QDir>
 #include <QImage>
+#include <QListWidget>
 #include <QPixmap>
+#include <QTemporaryDir>
 #include <QTemporaryFile>
+#include <QTimer>
 #include <QTransform>
 #include "MainWindow.h"
 #include "ImageViewer.h"
@@ -23,6 +27,7 @@ private slots:
     void metadata_showsOrientedOriginalDimensions();
     void metadata_afterCrop_showsBothOriginalAndCurrent();
     void cropRect_rotatesWithImage_withoutClipping();
+    void tabFolderDialog_clickingFileOpensItImmediately();
 
 private:
     ImageViewer *viewerOf(MainWindow &w) {
@@ -106,6 +111,54 @@ void MainWindowTest::cropRect_rotatesWithImage_withoutClipping() {
     // Stays within the new, transposed image bounds (150 x 200).
     QVERIFY(viewer->cropRect().right()  <= 150.0);
     QVERIFY(viewer->cropRect().bottom() <= 200.0);
+}
+
+// The Tab "open from current folder" dialog opens the picked file at once: a
+// single click on a list entry loads it (no separate confirmation step).
+void MainWindowTest::tabFolderDialog_clickingFileOpensItImmediately() {
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    QDir dir(tmp.path());
+    QImage img(40, 30, QImage::Format_RGB32);
+    img.fill(Qt::red);  QVERIFY(img.save(dir.absoluteFilePath("a.png")));
+    img.fill(Qt::blue); QVERIFY(img.save(dir.absoluteFilePath("b.png")));
+
+    MainWindow w(dir.absoluteFilePath("a.png"));
+    w.show();
+    QCoreApplication::processEvents();
+    ImageViewer *viewer = viewerOf(w);
+    QVERIFY(viewer);
+    QCOMPARE(QFileInfo(viewer->currentPath()).fileName(), QString("a.png"));
+
+    // Once the modal dialog is up, click the entry for "b.png".
+    bool clicked = false;
+    auto *poll = new QTimer(&w);
+    poll->setInterval(10);
+    connect(poll, &QTimer::timeout, &w, [&]() {
+        auto *dlg = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!dlg) return;
+        poll->stop();
+        auto *list = dlg->findChild<QListWidget *>();
+        if (!list) { dlg->reject(); return; }
+        QListWidgetItem *target = nullptr;
+        for (int i = 0; i < list->count(); ++i)
+            if (list->item(i)->text() == "b.png") target = list->item(i);
+        if (!target) { dlg->reject(); return; }
+        list->scrollToItem(target);
+        QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          list->visualItemRect(target).center());
+        clicked = true;
+    });
+    // Safety net: never hang if the dialog can't be driven.
+    QTimer::singleShot(3000, &w, [&]() {
+        if (auto *m = QApplication::activeModalWidget()) m->close();
+    });
+
+    poll->start();
+    QTest::keyClick(viewer, Qt::Key_Tab);   // opens the modal dialog (blocks until closed)
+
+    QVERIFY(clicked);
+    QCOMPARE(QFileInfo(viewer->currentPath()).fileName(), QString("b.png"));
 }
 
 int main(int argc, char *argv[]) {
