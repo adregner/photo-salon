@@ -1,4 +1,4 @@
-# Runs tests on every push and pull request.
+# Runs tests (macOS + Linux) and verifies the Windows cross-compile on every push and pull request.
 name: CI
 
 on:
@@ -62,3 +62,59 @@ jobs:
 
       - name: Test
         run: cd _build && ctest --output-on-failure
+
+  # Verifies the Windows .exe still cross-compiles (clang-cl/lld targeting MSVC ABI).
+  # Mirrors the build job in release-windows.yml but only checks that it links — no
+  # signing or release upload. Gated on the Linux build so we don't spend the LLVM/Qt
+  # setup when the basic build is already broken.
+  cross-compile-windows:
+    runs-on: ubuntu-latest
+    needs: test-linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 19 and CMake
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y cmake clang-19 lld-19 llvm-19
+
+      # /opt is root-owned; hand off to the runner before the cache step
+      # so actions/cache can restore into it without sudo.
+      - name: Prepare Qt host directory
+        run: |
+          sudo mkdir -p /opt/qt-linux
+          sudo chown "$(id -un):$(id -gn)" /opt/qt-linux
+
+      - name: Cache Qt host tools
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/qt-linux
+          key: qt-linux-6.11.1-gcc64
+
+      - name: Install Qt host tools (moc/rcc for cross-compile)
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/aqt-venv"
+          "$RUNNER_TEMP/aqt-venv/bin/pip" install --quiet aqtinstall
+          "$RUNNER_TEMP/aqt-venv/bin/aqt" install-qt --outputdir /opt/qt-linux linux desktop 6.11.1 linux_gcc_64 \
+            --archives icu qtbase
+
+      - name: Cache Windows cross-compile dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            windows/msvc/include
+            windows/sdk/include
+            windows/qt-6.11
+          key: windows-cross-deps-${{ hashFiles('fetch-windows-deps.sh') }}
+
+      - name: Fetch windows deps
+        run: ./fetch-windows-deps.sh
+
+      - name: Cross-compile
+        run: ./build-windows.sh
+
+      - name: Verify exe was produced
+        run: test -f _build_win/photo-salon.exe && file _build_win/photo-salon.exe
