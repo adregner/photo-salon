@@ -135,8 +135,13 @@ transform (like B&W), leave `m_basePixmap` alone.
 - `QPixmap::trueMatrix(t, w, h)` reproduces the translation Qt adds when transforming,
   which is used to map the saved crop rect into the new coordinate space — so re-entering
   crop still pre-selects the same region after a rotate/flip.
-- Updates `m_orientedDiskPixmap`, re-arms the crop base, transforms `m_basePixmap`, then
-  either re-runs B&W (if active) or pushes the result via `setDisplayPixmap()`.
+- Order matters: the crop base is re-armed to the new `m_orientedDiskPixmap` **before**
+  the crop rect is remapped, because `setCropRect()` clamps against the crop base. A
+  90°/270° rotation swaps width and height, so clamping against the stale bounds would
+  clip the rotated selection.
+- Updates `m_orientedDiskPixmap`, re-arms the crop base, remaps the crop rect, transforms
+  `m_basePixmap`, then either re-runs B&W (if active) or pushes the result via
+  `setDisplayPixmap()`.
 - `R` accumulates `m_rotationAngle` mod 360; `H`/`V` toggle `m_flippedH` / `m_flippedV`.
   These flags feed the metadata edit-state line.
 

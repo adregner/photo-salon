@@ -7,6 +7,7 @@
 #include <QImage>
 #include <QPixmap>
 #include <QTemporaryFile>
+#include <QTransform>
 #include "MainWindow.h"
 #include "ImageViewer.h"
 
@@ -21,6 +22,7 @@ public:
 private slots:
     void metadata_showsOrientedOriginalDimensions();
     void metadata_afterCrop_showsBothOriginalAndCurrent();
+    void cropRect_rotatesWithImage_withoutClipping();
 
 private:
     ImageViewer *viewerOf(MainWindow &w) {
@@ -72,6 +74,38 @@ void MainWindowTest::metadata_afterCrop_showsBothOriginalAndCurrent() {
     QCOMPARE(data.value("Dimensions"), dims(200, 150));          // original preserved
     QCOMPARE(data.value("CurrentDimensions"), "→ " + dims(100, 60));
     QVERIFY(data.value("State_Edits").contains("crop"));
+}
+
+// Regression: when the image is rotated, a stored crop selection must rotate
+// with it so it still surrounds the same area. A 140x60 crop on a 200x150 image
+// becomes 60x140 after a 90° turn — it must NOT be clipped (to 60x100) against
+// the pre-rotation height.
+void MainWindowTest::cropRect_rotatesWithImage_withoutClipping() {
+    MainWindow w(m_imagePath); // 200x150
+    w.resize(400, 300);
+    w.show();
+    QCoreApplication::processEvents();
+
+    ImageViewer *viewer = viewerOf(w);
+    QVERIFY(viewer);
+
+    // A crop that spans most of the width, so a 90° rotation maps it past the
+    // old 150 px height.
+    const QRectF crop(50, 30, 140, 60);
+    viewer->setCropMode(true);
+    viewer->setCropRect(crop);
+    viewer->setCropMode(false);
+    QCOMPARE(viewer->cropRect(), crop);
+
+    // Rotate 90° clockwise (R), then re-enter crop as the user would.
+    QTest::keyClick(viewer, Qt::Key_R);
+    QCOMPARE(viewer->cropRect().size(), QSizeF(60, 140));   // swapped, not clipped
+
+    viewer->setCropMode(true);
+    QCOMPARE(viewer->cropRect().size(), QSizeF(60, 140));   // preserved on re-entry
+    // Stays within the new, transposed image bounds (150 x 200).
+    QVERIFY(viewer->cropRect().right()  <= 150.0);
+    QVERIFY(viewer->cropRect().bottom() <= 200.0);
 }
 
 int main(int argc, char *argv[]) {

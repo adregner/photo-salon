@@ -481,14 +481,17 @@ void MainWindow::applyOrientationTransform(const QTransform &t) {
     // Transform the full oriented disk pixmap (keeps the un-cropped original at current orientation).
     m_orientedDiskPixmap = m_orientedDiskPixmap.transformed(t, Qt::SmoothTransformation);
 
+    // Update the crop base to the new oriented original BEFORE remapping the crop
+    // rect. setCropRect() clamps against the crop base, so the base must already be
+    // in the new coordinate space — otherwise a 90°/270° rotation (which swaps width
+    // and height) would clip the mapped rect against the stale pre-rotation bounds.
+    m_viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
+
     // Transform the saved crop rect so re-entering crop still pre-selects the same
     // region, now mapped into the rotated/flipped image's coordinate space.
     QRectF cropRect = m_viewer->cropRect();
     if (cropRect.isValid() && !cropRect.isEmpty())
         m_viewer->setCropRect(full.mapRect(cropRect));
-
-    // Update crop base so entering crop always shows the full oriented original.
-    m_viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
 
     // m_basePixmap is the display image (orientation + crop applied).
     m_basePixmap = m_basePixmap.transformed(t, Qt::SmoothTransformation);
