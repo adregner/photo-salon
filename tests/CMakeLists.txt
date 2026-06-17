@@ -66,6 +66,12 @@ add_test(NAME test_bw_converter COMMAND test_bw_converter)
 set_tests_properties(test_bw_converter PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+qt_add_executable(test_bw_panel test_bw_panel.cpp)
+target_link_libraries(test_bw_panel PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_bw_panel COMMAND test_bw_panel)
+set_tests_properties(test_bw_panel PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 qt_add_executable(test_exif_reader test_exif_reader.cpp)
 target_link_libraries(test_exif_reader PRIVATE Qt6::Test photo-salon-lib)
 # EXIF_SAMPLES_DIR points to the fetched exif-py repository root so tests can
