@@ -26,6 +26,12 @@ public:
 public slots:
     void toggleFullscreen();
 
+public:
+    // Display-only metadata derived from the current in-memory edit state
+    // (orientation/crop/B&W summary plus original and current dimensions).
+    // Merged into the EXIF data shown by the metadata overlay. Public for tests.
+    ExifReader::ExifData imageStateData() const;
+
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
@@ -39,7 +45,6 @@ private:
     void exitApplication();
     void openFile();
     void updateExternalEditorName();
-    ExifReader::ExifData imageStateData() const;
 
     ImageViewer *m_viewer = nullptr;
     HelpOverlay *m_helpOverlay = nullptr;

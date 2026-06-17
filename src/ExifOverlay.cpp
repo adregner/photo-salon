@@ -41,7 +41,7 @@ QStringList ExifOverlay::defaultTemplate()
         "",
         "{Software}",
         "",
-        "{Dimensions} {CropDimensions}",
+        "{Dimensions} {CurrentDimensions}",
         "{FileName}  ·  {FileSize}",
         "",
         "{State_Edits}",
