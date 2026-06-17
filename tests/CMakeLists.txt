@@ -60,6 +60,12 @@ add_test(NAME test_crop_tool COMMAND test_crop_tool)
 set_tests_properties(test_crop_tool PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+qt_add_executable(test_pan_cursor test_pan_cursor.cpp)
+target_link_libraries(test_pan_cursor PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_pan_cursor COMMAND test_pan_cursor)
+set_tests_properties(test_pan_cursor PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 qt_add_executable(test_bw_converter test_bw_converter.cpp)
 target_link_libraries(test_bw_converter PRIVATE Qt6::Test photo-salon-lib)
 add_test(NAME test_bw_converter COMMAND test_bw_converter)

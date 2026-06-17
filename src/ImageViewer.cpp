@@ -36,6 +36,10 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     setScene(m_scene);
     setRenderHint(QPainter::SmoothPixmapTransform);
     setDragMode(QGraphicsView::ScrollHandDrag);
+    // ScrollHandDrag would otherwise keep an open-hand cursor over the image at
+    // all times. Keep a plain arrow at rest; the closed hand appears only while
+    // actively dragging to pan (restored on release in mouseReleaseEvent).
+    viewport()->setCursor(Qt::ArrowCursor);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
@@ -340,7 +344,7 @@ void ImageViewer::setCropMode(bool active) {
 
         m_activeHandle = CropHandle::None;
         setDragMode(QGraphicsView::ScrollHandDrag);
-        viewport()->unsetCursor();
+        viewport()->setCursor(Qt::ArrowCursor);
     }
 
     emit cropModeChanged(m_cropMode);
@@ -449,7 +453,13 @@ void ImageViewer::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
-    if (!m_cropMode) { QGraphicsView::mouseReleaseEvent(event); return; }
+    if (!m_cropMode) {
+        QGraphicsView::mouseReleaseEvent(event);
+        // ScrollHandDrag restores an open-hand cursor here; force it back to a
+        // plain arrow so the hand is only ever shown mid-pan.
+        viewport()->setCursor(Qt::ArrowCursor);
+        return;
+    }
     if (event->button() == Qt::LeftButton) {
         m_activeHandle = CropHandle::None;
         updateCropCursor(event->pos());
