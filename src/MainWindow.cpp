@@ -12,12 +12,14 @@
 #include "ImageViewer.h"
 #include "OpenDialog.h"
 #include <QApplication>
+#include <QDialog>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFutureWatcher>
-#include <QInputDialog>
 #include <QKeyEvent>
+#include <QLabel>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QResizeEvent>
 #include <QPalette>
@@ -25,6 +27,7 @@
 #include <QSettings>
 #include <QPushButton>
 #include <QTimer>
+#include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrent>
 
 MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
@@ -242,17 +245,30 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
         if (files.isEmpty()) return;
 
         int current = files.indexOf(QFileInfo(currentPath).fileName());
-        bool ok = false;
-        QString selected = QInputDialog::getItem(
-            this,
-            QStringLiteral("Open Image"),
-            QStringLiteral("Select image:"),
-            files,
-            qMax(0, current),
-            /*editable=*/false,
-            &ok);
-        if (ok && !selected.isEmpty())
-            viewer->loadImage(dir.absoluteFilePath(selected));
+
+        QDialog dialog(this);
+        dialog.setWindowTitle(QStringLiteral("Open Image"));
+        auto *layout = new QVBoxLayout(&dialog);
+        layout->addWidget(new QLabel(QStringLiteral("Select image:"), &dialog));
+        auto *list = new QListWidget(&dialog);
+        list->addItems(files);
+        list->setCurrentRow(qMax(0, current));
+        layout->addWidget(list);
+
+        // Picking a file — single click, double click, or Enter — opens it
+        // immediately; Escape dismisses the dialog without changing the image.
+        bool opened = false;
+        auto openItem = [&](QListWidgetItem *item) {
+            if (opened || !item) return;
+            opened = true;
+            viewer->loadImage(dir.absoluteFilePath(item->text()));
+            dialog.accept();
+        };
+        connect(list, &QListWidget::itemClicked,   &dialog, [&](QListWidgetItem *i) { openItem(i); });
+        connect(list, &QListWidget::itemActivated, &dialog, [&](QListWidgetItem *i) { openItem(i); });
+
+        list->setFocus();
+        dialog.exec();
     });
 
     m_exitOverlay = new ExitOverlay(this);
