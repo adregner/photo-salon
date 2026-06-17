@@ -32,6 +32,14 @@ static const char *kBtnStyle =
     " border-radius: 3px; padding: 3px 7px; font-size: 12px; }"
     "QPushButton:hover { background: #555; }";
 
+// Compare is a toggle: a lighter shade of grey marks the "showing original" state.
+static const char *kCompareBtnStyle =
+    "QPushButton { color: white; background: #444; border: 1px solid #666;"
+    " border-radius: 3px; padding: 3px 7px; font-size: 12px; }"
+    "QPushButton:hover { background: #555; }"
+    "QPushButton:checked { color: white; background: #888; border: 1px solid #aaa; }"
+    "QPushButton:checked:hover { background: #999; }";
+
 static const char *kLookBtnStyle =
     "QPushButton { color: white; background: #444; border: 1px solid #666;"
     " border-radius: 3px; padding: 4px 6px; font-size: 12px; }"
@@ -159,7 +167,7 @@ BwPanel::BwPanel(QWidget *parent)
     bottomRow->addWidget(m_resetBtn);
 
     m_compareBtn = new QPushButton("Compare", this);
-    m_compareBtn->setStyleSheet(kBtnStyle);
+    m_compareBtn->setStyleSheet(kCompareBtnStyle);
     m_compareBtn->setCheckable(true);
     m_compareBtn->setFocusPolicy(Qt::NoFocus);
     connect(m_compareBtn, &QPushButton::toggled, this, [this](bool checked) {
@@ -219,9 +227,11 @@ void BwPanel::selectLook(BwLook look) {
 }
 
 void BwPanel::setComparing(bool comparing) {
+    // Keep the button enabled so it toggles back and forth; reflect the current
+    // state in its label and (via the :checked style) its shade of grey.
     QSignalBlocker blocker(*m_compareBtn);
     m_compareBtn->setChecked(comparing);
-    m_compareBtn->setEnabled(!comparing);
+    m_compareBtn->setText(comparing ? "Back to B&W" : "Compare");
 }
 
 void BwPanel::updateValueLabels() {
