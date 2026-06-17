@@ -44,8 +44,9 @@ cd _build && ctest --output-on-failure   # run the test suite (headless)
   Folder navigation excludes `*.svg`.
 - When adding a feature, check whether `README.md`, `CLAUDE.md`, `ROADMAP.md`, and the
   `HelpOverlay` shortcut list need updating.
-- When adding a Qt module or library that pulls in new Windows system DLLs, update the
-  SDK import stubs in `fetch-windows-deps.sh`. See **`doc/BUILD.md` § Windows SDK stubs**.
+- When adding a Qt module or library that pulls in new Windows system DLLs, copy the
+  matching Windows SDK import lib into `windows/sdk/lib/um/`. See
+  **`doc/BUILD.md` § Windows SDK import libraries**.
 
 ## Architecture (summary)
 

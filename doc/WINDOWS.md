@@ -49,6 +49,62 @@ Build options used:
 - `-DBUILD_SHARED_LIBS=OFF`
 - `-DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF`
 
+The bundle is hosted at `s3://photo-salon/_build/windows/qt-6.11.tar.gz` (~89 MB),
+fetched by `fetch-windows-deps.sh` and extracted to `windows/qt-6.11/x64/`. Because it is
+a **static** build, image-format plugins are static `.lib`s (under
+`plugins/imageformats/`) with their `*_init` objects plus `lib/cmake/Qt6Gui` import
+configs; the cross-link picks them up automatically via Qt's static-plugin import, so
+adding a format needs **no app code change**.
+
+### Updating the bundle — adding image-format modules (TIFF, WebP, …)
+
+The base bundle is built from **qtbase only**, so out of the box it ships only the
+jpeg/gif/ico/bmp/ppm/etc. plugins. TIFF, WebP, TGA, WBMP and ICNS come from the separate
+**`qtimageformats`** module, which must be built **statically against this same static
+Qt** and installed into the prefix. Do this on a Windows machine with the matching MSVC
+toolset (see the gotcha below):
+
+```bash
+# 1. Extract the current bundle to a working prefix (e.g. C:\qtwork\qt-6.11\x64)
+# 2. Get the matching source
+git clone --depth 1 --branch v6.11.1 https://github.com/qt/qtimageformats.git
+# 3. Configure + build + install into the prefix, from a build dir:
+#    (run inside the original toolset's vcvars64 env; Qt ships cmake/ninja under C:\Qt\Tools)
+qt-6.11/x64/bin/qt-configure-module.bat <src>/qtimageformats -- -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+cmake --install .          # installs the new qtiff/qwebp/… .lib + cmake configs into the prefix
+# 4. Re-tar:  tar czf qt-6.11.tar.gz qt-6.11
+# 5. Back up the old S3 object, then upload the new one (see § Bundle upload below).
+```
+
+**Toolset gotcha (STL1001):** `lib/cmake/Qt6/qt.toolchain.cmake` pins the *original*
+compiler the static Qt was built with via `QT_USE_ORIGINAL_COMPILER` (on by default). The
+6.11.1 bundle was built with **MSVC 14.44.35207**. If you build a module with that
+compiler but a *newer* toolset's STL headers on `INCLUDE` (e.g. 14.51 from a current VS),
+you get `error STL1001: Unexpected compiler version, expected MSVC Compiler 19.50 or
+newer`. Fix: run the module build under the **original toolset's** `vcvars64.bat` so
+compiler and headers match (or pass `-DQT_USE_ORIGINAL_COMPILER=OFF` to use a single
+newer toolset consistently — any MSVC v14x is forward binary-compatible).
+
+`JasPer` (JPEG 2000) and `MNG` are **off** — `qtimageformats` doesn't bundle those
+third-party libs by default; enabling them needs their sources fetched separately. The
+image-format plugins add no new Windows system-DLL dependencies beyond what `Qt6Gui`
+already pulls in, so no new `windows/sdk/lib/um/` import libs are required.
+
+### Bundle upload
+
+Re-tar from the directory *above* `qt-6.11/` so the archive root stays `qt-6.11/x64/...`.
+Back up the existing object before overwriting:
+
+```bash
+B=s3://photo-salon/_build/windows
+aws s3 cp $B/qt-6.11.tar.gz $B/qt-6.11.prebackup.tar.gz   # rollback copy
+aws s3 cp qt-6.11.tar.gz    $B/qt-6.11.tar.gz             # publish
+```
+
+AWS auth on the build box uses `aws login` (a custom session wrapper; cross-device:
+`aws login --remote`), not static keys.
+
 ## Build
 
 ```bash
