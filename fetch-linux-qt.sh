@@ -34,7 +34,22 @@ fi
 
 mkdir -p "$DEST"
 echo "  fetch Qt $QT_VERSION → $QT_PREFIX"
-aqt install-qt --outputdir "$DEST" linux desktop "$QT_VERSION" linux_gcc_64 --archives icu qtbase
+# qtimageformats adds the TIFF/WebP/etc. plugins on top of qtbase's jpeg/png/gif.
+# TIFF is required by the "Open in..." external-editor export.
+aqt install-qt --outputdir "$DEST" linux desktop "$QT_VERSION" linux_gcc_64 \
+    --archives icu qtbase --modules qtimageformats
+
+# aqt's prebuilt qtiff plugin links the older libtiff.so.5 soname, but modern
+# Linux (Ubuntu 24.04+) ships libtiff.so.6. Drop a compat symlink into the Qt
+# prefix lib dir — the plugin's RUNPATH is $ORIGIN/../../lib — so qtiff loads and
+# the "Open in..." TIFF export works. Skipped if libtiff.so.5 already resolves.
+if [ ! -e "$QT_PREFIX/lib/libtiff.so.5" ]; then
+    sys_tiff="$(ldconfig -p 2>/dev/null | awk '/libtiff\.so\.6/{print $NF; exit}')"
+    if [ -n "$sys_tiff" ]; then
+        ln -sf "$sys_tiff" "$QT_PREFIX/lib/libtiff.so.5"
+        echo "  link  libtiff.so.5 -> $sys_tiff (qtiff compat shim)"
+    fi
+fi
 
 echo "Done."
 echo ""

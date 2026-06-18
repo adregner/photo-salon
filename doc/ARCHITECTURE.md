@@ -231,7 +231,17 @@ so the overlay reflects in-memory edits, not just the file's EXIF.
 (`QImageReader::supportedImageFormats()`) — JPEG is primary but PNG and others load too.
 This drives folder navigation, the file-dialog filter, and the macOS `NSOpenPanel`
 content types. Folder *navigation* (`←`/`→`) additionally excludes `*.svg`. The Save
-dialog defaults to `<name>-saved.jpg` and offers JPEG/PNG.
+dialog defaults to `<name>-saved.jpg` and offers **every format Qt can write**
+(`supportedSaveFilter()` → `QImageWriter::supportedImageFormats()`).
+
+The TIFF/WebP/etc. plugins come from Qt's **`qtimageformats`** module, which
+`fetch-linux-qt.sh` and the macOS CI install alongside `qtbase`. The Linux fetch also
+drops a `libtiff.so.5` compat symlink into the Qt prefix, because the prebuilt `qtiff`
+plugin links that older soname while modern Linux (Ubuntu 24.04+) ships `libtiff.so.6`.
+The **"Open in..."** external-editor feature exports the edited image to a temp file as
+**TIFF** — lossless, so the hand-off preserves full quality (see
+`writeExportForExternalApp()` in `MainWindow.cpp`). On Windows the bundled Qt must
+include the `qtiff` plugin for this export to work at runtime — see `doc/WINDOWS.md`.
 
 ## Adding a feature — checklist
 

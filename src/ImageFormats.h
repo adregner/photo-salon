@@ -9,6 +9,11 @@ QStringList supportedExtensions();
 // Returns a QFileDialog-compatible filter string for all supported image formats.
 QString supportedFileFilter();
 
+// Returns a QFileDialog filter string covering every format Qt can *write*
+// (QImageWriter::supportedImageFormats()), for the Save dialog: a combined
+// "All Images" entry first, then one entry per format, then "All Files (*)".
+QString supportedSaveFilter();
+
 // Resolves a CLI argument to an absolute image file path.
 // If arg is a directory, returns the first image file (sorted by name).
 // If arg is a file, returns its absolute path.
