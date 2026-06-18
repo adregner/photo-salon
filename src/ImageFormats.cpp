@@ -2,6 +2,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QImageReader>
+#include <QImageWriter>
 
 QStringList supportedExtensions() {
     QStringList filters;
@@ -12,6 +13,21 @@ QStringList supportedExtensions() {
 
 QString supportedFileFilter() {
     return QStringLiteral("Images (%1);;All Files (*)").arg(supportedExtensions().join(' '));
+}
+
+QString supportedSaveFilter() {
+    QStringList globs;      // "*.png", "*.jpg", ...
+    QStringList perFormat;  // "PNG (*.png)", "JPG (*.jpg)", ...
+    for (const QByteArray &fmt : QImageWriter::supportedImageFormats()) {
+        const QString ext  = QString::fromLatin1(fmt).toLower();
+        const QString glob = QStringLiteral("*.%1").arg(ext);
+        globs << glob;
+        perFormat << QStringLiteral("%1 (%2)").arg(ext.toUpper(), glob);
+    }
+    QString filter = QStringLiteral("All Images (%1)").arg(globs.join(' '));
+    if (!perFormat.isEmpty())
+        filter += QStringLiteral(";;") + perFormat.join(QStringLiteral(";;"));
+    return filter + QStringLiteral(";;All Files (*)");
 }
 
 QString resolveImagePath(const QString &arg, QString *error) {

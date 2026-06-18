@@ -30,6 +30,18 @@
 #include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrent>
 
+namespace {
+// Writes the edited pixmap to a temp file for hand-off to an external editor.
+// TIFF is lossless, so round-tripping through the editor preserves full quality
+// (unlike a re-encoded JPEG). Returns the path, or an empty string on failure.
+QString writeExportForExternalApp(const QPixmap &pixmap) {
+    const QString tempPath = QDir::tempPath() + QStringLiteral("/photo-salon-export.tiff");
+    if (!pixmap.save(tempPath, "TIFF"))
+        return {};
+    return tempPath;
+}
+}  // namespace
+
 MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     : QMainWindow(parent)
 {
@@ -141,7 +153,7 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
             QStringLiteral("Save Image"),
             QFileInfo(viewer->currentPath()).dir().absoluteFilePath(
                 QFileInfo(viewer->currentPath()).baseName() + "-saved.jpg"),
-            QStringLiteral("JPEG Images (*.jpg *.jpeg);;PNG Images (*.png);;All Files (*)"));
+            supportedSaveFilter());
 
         if (savePath.isEmpty()) return;
 
@@ -158,8 +170,8 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
         } else {
             QPixmap display = viewer->currentDisplayPixmap();
             if (display.isNull()) return;
-            QString tempPath = QDir::tempPath() + "/photo-salon-export.png";
-            if (!display.save(tempPath, "PNG")) return;
+            QString tempPath = writeExportForExternalApp(display);
+            if (tempPath.isEmpty()) return;
             if (openInExternalApp(tempPath, this))
                 updateExternalEditorName();
         }
@@ -168,8 +180,8 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     connect(viewer, &ImageViewer::openExternalPickerRequested, this, [this, viewer]() {
         QPixmap display = viewer->currentDisplayPixmap();
         if (display.isNull()) return;
-        QString tempPath = QDir::tempPath() + "/photo-salon-export.png";
-        if (!display.save(tempPath, "PNG")) return;
+        QString tempPath = writeExportForExternalApp(display);
+        if (tempPath.isEmpty()) return;
         if (openInExternalApp(tempPath, this, /*forcePick=*/true))
             updateExternalEditorName();
     });
