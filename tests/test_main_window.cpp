@@ -8,6 +8,8 @@
 #include <QImage>
 #include <QListWidget>
 #include <QPixmap>
+#include <QSettings>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
 #include <QTimer>
@@ -24,6 +26,7 @@ public:
     MainWindowTest();
 
 private slots:
+    void init() { QSettings().clear(); }   // isolate each test from saved manifests
     void metadata_showsOrientedOriginalDimensions();
     void metadata_afterCrop_showsBothOriginalAndCurrent();
     void cropRect_rotatesWithImage_withoutClipping();
@@ -163,6 +166,11 @@ void MainWindowTest::tabFolderDialog_clickingFileOpensItImmediately() {
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
+    // Redirect QSettings to a throwaway sandbox so the manifest store written by
+    // MainWindow never touches the real user configuration.
+    QStandardPaths::setTestModeEnabled(true);
+    app.setOrganizationName(QStringLiteral("photo-salon-test"));
+    app.setApplicationName(QStringLiteral("photo-salon-test"));
     MainWindowTest test;
     return QTest::qExec(&test, argc, argv);
 }

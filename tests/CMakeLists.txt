@@ -99,3 +99,9 @@ target_link_libraries(test_main_window PRIVATE Qt6::Test photo-salon-lib)
 add_test(NAME test_main_window COMMAND test_main_window)
 set_tests_properties(test_main_window PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(test_edit_manifest test_edit_manifest.cpp)
+target_link_libraries(test_edit_manifest PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_edit_manifest COMMAND test_edit_manifest)
+set_tests_properties(test_edit_manifest PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

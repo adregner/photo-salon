@@ -23,8 +23,10 @@
 #include <QMessageBox>
 #include <QResizeEvent>
 #include <QPalette>
+#include <QPixmap>
 #include <QScreen>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -46,10 +48,6 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     : QMainWindow(parent)
 {
     m_viewer = new ImageViewer(imagePath, this);
-    m_diskPixmap = m_viewer->pixmap();   // capture image from initial load
-    m_orientedDiskPixmap = m_diskPixmap;
-    m_basePixmap = m_diskPixmap;
-    m_viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
     auto *viewer = m_viewer;
     setCentralWidget(viewer);
     qApp->installEventFilter(this);
@@ -61,20 +59,13 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
             setWindowTitle(QString("photo-salon — %1").arg(QFileInfo(path).fileName()));
     };
     updateTitle(imagePath);
+    // A new image from disk resets every buffer and re-applies that image's saved
+    // manifest (orientation/crop/B&W) — see onImageLoaded().
     connect(viewer, &ImageViewer::imagePathChanged, this, [this, viewer, updateTitle](const QString &path) {
         updateTitle(path);
-        if (!path.isEmpty() && m_idleOverlay) {
+        if (!path.isEmpty() && m_idleOverlay)
             m_idleOverlay->hide();
-        }
-        m_diskPixmap = viewer->pixmap();   // new image from disk; reset crop origin and orientation
-        m_orientedDiskPixmap = m_diskPixmap;
-        m_basePixmap = m_diskPixmap;
-        viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
-        m_rotationAngle = 0;
-        m_flippedH      = false;
-        m_flippedV      = false;
-        m_cropApplied   = false;
-        deactivateBw();
+        onImageLoaded(path);
     });
 
     QSize imageSize = viewer->nativeImageSize();
@@ -196,7 +187,7 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
         m_lastBwImage  = m_bwWatcher->result();
         m_lastBwPixmap = QPixmap::fromImage(m_lastBwImage);
         // Don't clobber the crop UI or show a stale result while crop is active.
-        if (m_bwActive && !m_bwComparing && !m_viewer->cropMode())
+        if (bwActive() && !m_bwComparing && !m_viewer->cropMode())
             m_viewer->setDisplayPixmap(m_lastBwPixmap);
     });
 
@@ -206,42 +197,52 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     connect(viewer, &ImageViewer::bwPanelRequested,  this, &MainWindow::onBwPanelRequested);
     connect(viewer, &ImageViewer::bwCompareRequested, this, &MainWindow::toggleBwCompare);
 
-    connect(m_bwPanel, &BwPanel::paramsChanged, this, [this](const BwParams &) {
-        if (m_bwActive && !m_bwComparing)
+    // Slider/look changes flow straight into the manifest's B&W edit (the canonical
+    // settings) and are persisted, then a (debounced) re-conversion is scheduled.
+    connect(m_bwPanel, &BwPanel::paramsChanged, this, [this](const BwParams &p) {
+        if (bwActive() && !m_bwComparing) {
+            m_manifest.bw()->setParams(p);
+            persistManifest();
             m_bwDebounce->start();
+        }
     });
 
     connect(m_bwPanel, &BwPanel::compareToggled, this, [this](bool showOriginal) {
         m_bwComparing = showOriginal;
         m_bwPanel->setComparing(m_bwComparing);
-        if (!m_bwActive || m_originalImage.isNull()) return;
+        if (!bwActive() || m_baseImage.isNull()) return;
         if (showOriginal)
-            m_viewer->setDisplayPixmap(m_basePixmap);
+            showBase();
         else if (!m_lastBwPixmap.isNull())
             m_viewer->setDisplayPixmap(m_lastBwPixmap);
     });
 
     connect(m_bwPanel, &BwPanel::resetToColorRequested, this, &MainWindow::deactivateBw);
 
-    // When crop is applied, update m_basePixmap from the freshly-cropped in-memory
-    // image and re-run BW on it. This keeps the pipeline: base → crop → BW → display.
+    // Crop apply: fold the viewer's selection into the manifest as a normalized
+    // crop edit, re-derive the base from it, and re-run B&W if active. This keeps
+    // the manifest the single source of truth for the pipeline base → crop → B&W.
     connect(viewer, &ImageViewer::cropModeChanged, this, [this, viewer](bool cropActive) {
         if (cropActive) {
             // Entering crop: stop any pending BW work; the crop UI shows the color image.
             m_bwDebounce->stop();
+            return;
+        }
+        QRectF sel = viewer->cropRect();
+        if (!sel.isValid() || sel.isEmpty())
+            sel = QRectF(QPointF(0, 0), QSizeF(m_orientedImage.size()));
+        CropEdit &c = m_manifest.ensureCrop();
+        c.setRect(CropEdit::toNormalized(sel, m_orientedImage.size()));
+        if (c.isFull())
+            m_manifest.removeCrop();
+        rebuildBase();
+        persistManifest();
+        if (bwActive()) {
+            m_bwComparing = false;
+            m_bwPanel->setComparing(false);
+            applyBwConversion();
         } else {
-            // Crop applied: viewer->pixmap() is the freshly-cropped color image.
-            m_cropApplied = true;
-            m_basePixmap = viewer->pixmap();
-            // Always pass m_orientedDiskPixmap so re-entering crop shows the full
-            // original at the current orientation — the user can expand as well as shrink.
-            viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
-            if (m_bwActive) {
-                m_bwComparing = false;
-                m_bwPanel->setComparing(false);
-                m_originalImage = m_basePixmap.toImage();
-                applyBwConversion();
-            }
+            showBase();
         }
     });
 
@@ -294,18 +295,9 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
 
     connect(viewer, &ImageViewer::openFileRequested, this, &MainWindow::openFile);
 
-    connect(viewer, &ImageViewer::rotateRequested, this, [this]() {
-        m_rotationAngle = (m_rotationAngle + 90) % 360;
-        applyOrientationTransform(QTransform().rotate(90));
-    });
-    connect(viewer, &ImageViewer::flipHorizontalRequested, this, [this]() {
-        m_flippedH = !m_flippedH;
-        applyOrientationTransform(QTransform().scale(-1, 1));
-    });
-    connect(viewer, &ImageViewer::flipVerticalRequested, this, [this]() {
-        m_flippedV = !m_flippedV;
-        applyOrientationTransform(QTransform().scale(1, -1));
-    });
+    connect(viewer, &ImageViewer::rotateRequested,         this, [this]() { applyOrientationStep(OrientationStep::RotateCW); });
+    connect(viewer, &ImageViewer::flipHorizontalRequested, this, [this]() { applyOrientationStep(OrientationStep::FlipH); });
+    connect(viewer, &ImageViewer::flipVerticalRequested,   this, [this]() { applyOrientationStep(OrientationStep::FlipV); });
 
     connect(viewer, &ImageViewer::exitRequested, this, [this]() {
         if (m_exitDebounce->isActive()) {
@@ -316,6 +308,72 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
             m_exitDebounce->start();
         }
     });
+
+    // ImageViewer loaded the image in its constructor, before the signal above was
+    // connected, so capture that first image and apply its manifest explicitly.
+    onImageLoaded(imagePath);
+}
+
+// ---------------------------------------------------------------------------
+// Image load / manifest application
+// ---------------------------------------------------------------------------
+void MainWindow::onImageLoaded(const QString &path) {
+    m_diskImage = m_viewer->pixmap().toImage();
+    m_manifest  = EditManifest::loadFor(path);
+
+    // Reset transient B&W view state for the new image.
+    m_bwComparing = false;
+    m_bwDebounce->stop();
+    m_lastBwImage  = {};
+    m_lastBwPixmap = {};
+
+    rebuildOriented();
+
+    // Re-arm the viewer's crop selection from the saved crop (oriented pixels).
+    if (const CropEdit *c = m_manifest.crop())
+        m_viewer->setCropRect(QRectF(CropEdit::toPixels(c->rect(), m_orientedImage.size())));
+
+    rebuildBase();
+
+    if (m_manifest.bw()) {
+        // Load the saved look into the panel without re-triggering conversion, then
+        // run it once. Until it finishes, show the color base rather than flashing
+        // the unedited disk image.
+        {
+            QSignalBlocker block(m_bwPanel);
+            m_bwPanel->setParams(m_manifest.bw()->params());
+        }
+        m_bwPanel->setComparing(false);
+        showBase();
+        applyBwConversion();
+    } else {
+        if (m_bwPanel) {
+            m_bwPanel->setComparing(false);
+            m_bwPanel->hide();
+        }
+        showBase();
+    }
+}
+
+void MainWindow::rebuildOriented() {
+    const OrientationEdit *o = m_manifest.orientation();
+    m_orientedImage = o ? o->apply(m_diskImage) : m_diskImage;
+    // The crop UI always works against the full oriented original.
+    m_viewer->setBasePixmapForCrop(QPixmap::fromImage(m_orientedImage));
+}
+
+void MainWindow::rebuildBase() {
+    const CropEdit *c = m_manifest.crop();
+    m_baseImage = c ? c->apply(m_orientedImage) : m_orientedImage;
+}
+
+void MainWindow::showBase() {
+    if (!m_baseImage.isNull())
+        m_viewer->setDisplayPixmap(QPixmap::fromImage(m_baseImage));
+}
+
+void MainWindow::persistManifest() {
+    m_manifest.saveFor(m_viewer->currentPath());
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
@@ -411,16 +469,20 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Black & white
+// ---------------------------------------------------------------------------
 void MainWindow::onBwPanelRequested() {
     if (m_bwPanel->isVisible()) {
         m_bwPanel->hide();
         return;
     }
 
-    if (!m_bwActive) {
-        if (m_basePixmap.isNull()) return;
-        m_originalImage = m_basePixmap.toImage();
-        m_bwActive = true;
+    if (!bwActive()) {
+        if (m_baseImage.isNull()) return;
+        // Activating B&W records the panel's current look as a manifest edit.
+        m_manifest.ensureBw().setParams(m_bwPanel->params());
+        persistManifest();
         applyBwConversion();
     }
 
@@ -434,43 +496,44 @@ void MainWindow::onBwPanelRequested() {
 }
 
 void MainWindow::applyBwConversion() {
-    if (!m_bwActive || m_originalImage.isNull()) return;
+    BwEdit *edit = m_manifest.bw();
+    if (!edit || m_baseImage.isNull()) return;
     if (m_bwWatcher->isRunning()) {
         m_bwDebounce->start();
         return;
     }
-    QImage   src = m_originalImage;
-    BwParams p   = m_bwPanel->params();
+    // Convert off the GUI thread via the edit's own apply() (a value copy keeps the
+    // worker independent of later manifest changes).
+    QImage src = m_baseImage;
+    BwEdit job = *edit;
     m_bwWatcher->setFuture(
-        QtConcurrent::run([src, p]() { return BwConverter::convert(src, p); }));
+        QtConcurrent::run([src, job]() { return job.apply(src); }));
 }
 
 void MainWindow::toggleBwCompare() {
-    if (!m_bwActive || m_originalImage.isNull()) return;
+    if (!bwActive() || m_baseImage.isNull()) return;
     m_bwComparing = !m_bwComparing;
     m_bwPanel->setComparing(m_bwComparing);
     if (m_bwComparing)
-        m_viewer->setDisplayPixmap(m_basePixmap);
+        showBase();
     else if (!m_lastBwPixmap.isNull())
         m_viewer->setDisplayPixmap(m_lastBwPixmap);
 }
 
 void MainWindow::deactivateBw() {
-    if (!m_bwActive && m_originalImage.isNull()) return;
-
-    m_bwActive    = false;
+    const bool wasActive = bwActive();
+    m_manifest.removeBw();
     m_bwComparing = false;
     m_bwDebounce->stop();
+    if (wasActive)
+        persistManifest();
 
-    // Restore the color image. m_basePixmap always holds the current in-memory color
+    // Restore the color image. m_baseImage always holds the current in-memory color
     // image (post-crop), so this is always the right thing to show.
-    if (!m_basePixmap.isNull())
-        m_viewer->setDisplayPixmap(m_basePixmap);
+    showBase();
 
-    m_originalImage = {};
-    m_lastBwImage   = {};
-    m_lastBwPixmap  = {};
-    // m_basePixmap intentionally NOT cleared — it stays as the current color image.
+    m_lastBwImage  = {};
+    m_lastBwPixmap = {};
 
     if (m_bwPanel) {
         m_bwPanel->setComparing(false);
@@ -478,43 +541,58 @@ void MainWindow::deactivateBw() {
     }
 }
 
-void MainWindow::applyOrientationTransform(const QTransform &t) {
-    if (m_orientedDiskPixmap.isNull()) return;
+// ---------------------------------------------------------------------------
+// Orientation
+// ---------------------------------------------------------------------------
+void MainWindow::applyOrientationStep(OrientationStep step) {
+    if (m_diskImage.isNull()) return;
 
     // If crop is active, apply it first so the transform acts on the cropped image.
     if (m_viewer->cropMode())
         m_viewer->setCropMode(false);
 
-    // Compute the full transform Qt uses internally (pure t + translation into positive coords).
-    // We need this to map the crop rect into the new image's coordinate space.
-    QSize oldSize = m_orientedDiskPixmap.size();
-    QTransform full = QPixmap::trueMatrix(t, oldSize.width(), oldSize.height());
+    // Capture the crop selection in the OLD oriented coordinate space before the
+    // orientation changes, so it can be re-mapped afterwards.
+    const bool hadCrop = m_manifest.crop() != nullptr;
+    QRectF oldCropPx;
+    if (hadCrop)
+        oldCropPx = QRectF(CropEdit::toPixels(m_manifest.crop()->rect(), m_orientedImage.size()));
+    const QSize oldOriented = m_orientedImage.size();
 
-    // Transform the full oriented disk pixmap (keeps the un-cropped original at current orientation).
-    m_orientedDiskPixmap = m_orientedDiskPixmap.transformed(t, Qt::SmoothTransformation);
+    OrientationEdit &o = m_manifest.ensureOrientation();
+    QTransform incr;
+    switch (step) {
+    case OrientationStep::RotateCW: o.rotateClockwise(); incr = QTransform().rotate(90);   break;
+    case OrientationStep::FlipH:    o.flipHorizontal();  incr = QTransform().scale(-1, 1); break;
+    case OrientationStep::FlipV:    o.flipVertical();    incr = QTransform().scale(1, -1); break;
+    }
+    if (o.isIdentity())
+        m_manifest.removeOrientation();
 
-    // Update the crop base to the new oriented original BEFORE remapping the crop
-    // rect. setCropRect() clamps against the crop base, so the base must already be
-    // in the new coordinate space — otherwise a 90°/270° rotation (which swaps width
-    // and height) would clip the mapped rect against the stale pre-rotation bounds.
-    m_viewer->setBasePixmapForCrop(m_orientedDiskPixmap);
+    // Re-derive the oriented image and re-arm the crop base BEFORE remapping the
+    // crop rect: setCropRect() clamps against the (new) crop base, and a 90°/270°
+    // rotation swaps width and height, so clamping against the stale bounds would
+    // clip the mapped selection.
+    rebuildOriented();
 
-    // Transform the saved crop rect so re-entering crop still pre-selects the same
-    // region, now mapped into the rotated/flipped image's coordinate space.
-    QRectF cropRect = m_viewer->cropRect();
-    if (cropRect.isValid() && !cropRect.isEmpty())
-        m_viewer->setCropRect(full.mapRect(cropRect));
+    // Remap the saved crop rect so re-entering crop still pre-selects the same
+    // region, using the same translation Qt bakes into transformed().
+    if (hadCrop) {
+        QTransform full = QPixmap::trueMatrix(incr, oldOriented.width(), oldOriented.height());
+        m_viewer->setCropRect(full.mapRect(oldCropPx));
+        m_manifest.crop()->setRect(
+            CropEdit::toNormalized(m_viewer->cropRect(), m_orientedImage.size()));
+    }
 
-    // m_basePixmap is the display image (orientation + crop applied).
-    m_basePixmap = m_basePixmap.transformed(t, Qt::SmoothTransformation);
+    rebuildBase();
+    persistManifest();
 
-    if (m_bwActive) {
+    if (bwActive()) {
         m_bwComparing = false;
         m_bwPanel->setComparing(false);
-        m_originalImage = m_basePixmap.toImage();
         applyBwConversion();
     } else {
-        m_viewer->setDisplayPixmap(m_basePixmap);
+        showBase();
     }
 }
 
@@ -522,32 +600,29 @@ void MainWindow::exitApplication() {
     exit(0);
 }
 
+// ---------------------------------------------------------------------------
+// Metadata / files
+// ---------------------------------------------------------------------------
 ExifReader::ExifData MainWindow::imageStateData() const {
-    QStringList edits;
-    if (m_rotationAngle != 0)
-        edits << QString("%1° rotation").arg(m_rotationAngle);
-    if (m_flippedH) edits << "H flip";
-    if (m_flippedV) edits << "V flip";
-    if (m_cropApplied) edits << "crop";
-    if (m_bwActive) edits << "B&W";
-
     ExifReader::ExifData state;
+
+    const QString edits = m_manifest.summary();
     if (!edits.isEmpty())
-        state["State_Edits"] = edits.join(" · ");
+        state["State_Edits"] = edits;
 
     // Original dimensions, taken from the in-memory image as loaded (EXIF-oriented),
     // so they are always present and match what the user sees. This overrides the
     // un-oriented header size from QImageReader::size() and survives any edit —
     // after a crop the overlay still shows the original size, not just the crop.
-    if (!m_diskPixmap.isNull()) {
-        QSize orig = m_diskPixmap.size();
+    if (!m_diskImage.isNull()) {
+        QSize orig = m_diskImage.size();
         state["Dimensions"] = QString("%1 × %2").arg(orig.width()).arg(orig.height());
     }
     // Current dimensions, shown only once an edit changes them — a crop, or a
     // 90°/270° rotation that swaps width and height.
-    if (!m_diskPixmap.isNull() && !m_basePixmap.isNull()
-        && m_basePixmap.size() != m_diskPixmap.size()) {
-        QSize cur = m_basePixmap.size();
+    if (!m_diskImage.isNull() && !m_baseImage.isNull()
+        && m_baseImage.size() != m_diskImage.size()) {
+        QSize cur = m_baseImage.size();
         state["CurrentDimensions"] = QString("→ %1 × %2").arg(cur.width()).arg(cur.height());
     }
     return state;
