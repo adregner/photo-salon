@@ -176,6 +176,10 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         event->accept();
         break;
     case Qt::Key_C:
+        emit adjustPanelRequested();
+        event->accept();
+        break;
+    case Qt::Key_X:
         setCropMode(!m_cropMode);
         event->accept();
         break;

@@ -44,8 +44,8 @@ public:
     CropToolTest();
 
 private slots:
-    void cKeyEntersCropMode();
-    void cKeyTogglesCropModeOff();
+    void xKeyEntersCropMode();
+    void xKeyTogglesCropModeOff();
     void cropModeChangedSignal();
     void enterCropMode_initializesFullCropRect();
     void exitCropMode_withSubRect_appliesCrop();
@@ -68,20 +68,20 @@ CropToolTest::CropToolTest() {
     m_imagePath = makeTempImage(this);
 }
 
-void CropToolTest::cKeyEntersCropMode() {
+void CropToolTest::xKeyEntersCropMode() {
     ImageViewer viewer(m_imagePath);
     QVERIFY(!viewer.cropMode());
-    QTest::keyClick(&viewer, Qt::Key_C);
+    QTest::keyClick(&viewer, Qt::Key_X);
     QVERIFY(viewer.cropMode());
 }
 
-// Escape is handled globally by MainWindow's event filter; use C or
+// Escape is handled globally by MainWindow's event filter; use X or
 // setCropMode() to toggle off when testing the viewer in isolation.
-void CropToolTest::cKeyTogglesCropModeOff() {
+void CropToolTest::xKeyTogglesCropModeOff() {
     ImageViewer viewer(m_imagePath);
-    QTest::keyClick(&viewer, Qt::Key_C);
+    QTest::keyClick(&viewer, Qt::Key_X);
     QVERIFY(viewer.cropMode());
-    QTest::keyClick(&viewer, Qt::Key_C);
+    QTest::keyClick(&viewer, Qt::Key_X);
     QVERIFY(!viewer.cropMode());
 }
 
@@ -89,7 +89,7 @@ void CropToolTest::cropModeChangedSignal() {
     ImageViewer viewer(m_imagePath);
     QSignalSpy spy(&viewer, &ImageViewer::cropModeChanged);
 
-    QTest::keyClick(&viewer, Qt::Key_C);
+    QTest::keyClick(&viewer, Qt::Key_X);
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.at(0).at(0).toBool(), true);
 
@@ -104,7 +104,7 @@ void CropToolTest::enterCropMode_initializesFullCropRect() {
     viewer.show();
     QCoreApplication::processEvents();
 
-    QTest::keyClick(&viewer, Qt::Key_C);
+    QTest::keyClick(&viewer, Qt::Key_X);
     QVERIFY(viewer.cropMode());
 
     // Crop rect should span the full image on first entry
@@ -118,7 +118,7 @@ void CropToolTest::exitCropMode_withSubRect_appliesCrop() {
     viewer.show();
     QCoreApplication::processEvents();
 
-    QTest::keyClick(&viewer, Qt::Key_C);
+    QTest::keyClick(&viewer, Qt::Key_X);
     QVERIFY(viewer.cropMode());
 
     // Set a partial crop rect (half the image)
@@ -141,7 +141,7 @@ void CropToolTest::exitCropMode_withFullRect_keepsFullImage() {
     QCoreApplication::processEvents();
 
     // Enter crop mode (defaults to full image rect), exit without changing
-    QTest::keyClick(&viewer, Qt::Key_C);
+    QTest::keyClick(&viewer, Qt::Key_X);
     viewer.setCropMode(false);
 
     QPixmap display = viewer.currentDisplayPixmap();
@@ -156,7 +156,7 @@ void CropToolTest::reenterCropMode_reloadsOriginal() {
     QCoreApplication::processEvents();
 
     // Apply a crop
-    QTest::keyClick(&viewer, Qt::Key_C);
+    QTest::keyClick(&viewer, Qt::Key_X);
     viewer.setCropRect(QRectF(50, 37, 100, 76));
     viewer.setCropMode(false);
     QCOMPARE(viewer.currentDisplayPixmap().size(), QSize(100, 76));
