@@ -1,9 +1,9 @@
 #pragma once
+#include "EditManifest.h"
 #include "ExifReader.h"
 #include <QFutureWatcher>
 #include <QImage>
 #include <QMainWindow>
-#include <QPixmap>
 #include <QString>
 #include <QTransform>
 #include <Qt>
@@ -27,21 +27,35 @@ public slots:
     void toggleFullscreen();
 
 public:
-    // Display-only metadata derived from the current in-memory edit state
-    // (orientation/crop/B&W summary plus original and current dimensions).
-    // Merged into the EXIF data shown by the metadata overlay. Public for tests.
+    // Display-only metadata derived from the current edit manifest (orientation/
+    // crop/B&W summary plus original and current dimensions). Merged into the EXIF
+    // data shown by the metadata overlay. Public for tests.
     ExifReader::ExifData imageStateData() const;
+
+    // The manifest is the canonical record of all applied edits. Exposed for tests.
+    const EditManifest &manifest() const { return m_manifest; }
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 
 private:
+    enum class OrientationStep { RotateCW, FlipH, FlipV };
+
+    // Capture the freshly-loaded disk image and (re-)apply the saved manifest.
+    void onImageLoaded(const QString &path);
+    // Re-derive the pixmap buffers from the manifest via the edit interface.
+    void rebuildOriented();   // m_orientedImage = orientation edit applied to disk
+    void rebuildBase();       // m_baseImage = crop edit applied to oriented
+    void showBase();          // push the (color) base image to the viewer
+    void persistManifest();   // save the manifest for the current image path
+    bool bwActive() const { return m_manifest.bw() != nullptr; }
+
     void onBwPanelRequested();
     void applyBwConversion();
     void toggleBwCompare();
     void deactivateBw();
-    void applyOrientationTransform(const QTransform &t);
+    void applyOrientationStep(OrientationStep step);
     void exitApplication();
     void openFile();
     void updateExternalEditorName();
@@ -55,19 +69,17 @@ private:
     Qt::WindowStates m_windowStateBeforeFullscreen = Qt::WindowNoState;
     bool m_forwardingKeyEvent = false;
 
-    int                     m_rotationAngle = 0;
-    bool                    m_flippedH      = false;
-    bool                    m_flippedV      = false;
-    bool                    m_cropApplied   = false;
+    // The single source of truth for what edits are applied, and in what order.
+    EditManifest m_manifest;
+
+    // Pixmap buffers, all derived from the manifest applied to the disk image:
+    QImage m_diskImage;      // image exactly as loaded from disk; never edited
+    QImage m_orientedImage;  // disk image with the orientation edit applied (crop base)
+    QImage m_baseImage;      // oriented image with the crop edit applied (B&W source)
 
     BwPanel                *m_bwPanel       = nullptr;
-    QPixmap                 m_diskPixmap;        // image exactly as loaded from disk; never modified
-    QPixmap                 m_orientedDiskPixmap; // m_diskPixmap with current rotation/flip applied; always the full-size crop base
-    QPixmap                 m_basePixmap;        // m_orientedDiskPixmap with current crop applied; BW source
-    QImage                  m_originalImage; // = m_basePixmap.toImage(), cached for BW conversion
     QImage                  m_lastBwImage;
     QPixmap                 m_lastBwPixmap;
-    bool                    m_bwActive      = false;
     bool                    m_bwComparing   = false;
     QFutureWatcher<QImage> *m_bwWatcher     = nullptr;
     QTimer                 *m_bwDebounce    = nullptr;

@@ -114,3 +114,8 @@ photo-salon <image.jpg>
 ```
 
 Opens the specified JPEG image in a resizable window, scaled to fit.
+
+Edits are **non-destructive and remembered per image**: rotation, flips, crop, and the
+black-&-white look are tracked in an internal change manifest that is saved locally and
+re-applied automatically the next time you open the same file. The original on disk is never
+modified — use `S` to save an edited copy.

@@ -8,7 +8,9 @@ this file has the detail. All source lives in `src/`.
 | Class / file | Base | Responsibility |
 |---|---|---|
 | `main.cpp` | — | Entry point. Parses `argv[1]`, resolves it to an image path (or shows the open dialog), constructs `MainWindow`. No business logic. |
-| `MainWindow` | `QMainWindow` | Orchestrator. Owns the viewer, every overlay/panel, and **all image-transform state**. Wires `ImageViewer` signals to handlers. Runs the display pipeline. |
+| `MainWindow` | `QMainWindow` | Orchestrator. Owns the viewer, every overlay/panel, and the **`EditManifest`** (the canonical edit state). Wires `ImageViewer` signals to handlers. Runs the display pipeline. |
+| `EditManifest` | value type | The single, ordered, canonical record of every edit applied to the current image. Typed accessors, `render()`, JSON (de)serialization, and per-path persistence in `QSettings`. |
+| `ImageEdit` | interface | Common interface every editing module implements: `apply(QImage)` on an in-memory buffer, JSON (de)serialization, `clone()`, and a `summary()` tag. Concrete: `OrientationEdit`, `CropEdit`, `BwEdit`. |
 | `ImageViewer` | `QGraphicsView` | Display + input. Owns the `QGraphicsScene` and the single `QGraphicsPixmapItem`. Handles zoom/pan/fit, folder navigation, the crop UI, and emits *intent* signals for everything it does not own. |
 | `HelpOverlay` | `QWidget` | Mouse-transparent overlay painting the keyboard-shortcut list. Font auto-scales to fit. |
 | `ExifOverlay` | `QWidget` | Template-driven metadata overlay. Reverse-geocodes GPS via Nominatim. Shows live edit state. |
@@ -81,6 +83,45 @@ sinks (viewport, scene, child widgets) that would otherwise swallow keys.
 | Scroll wheel | Zoom, anchored under cursor | `wheelEvent` |
 | Drag (no crop) | Pan | `ScrollHandDrag` |
 
+## The edit manifest (canonical edit state)
+
+Every modification is recorded in one **`EditManifest`** owned by `MainWindow` — the single
+source of truth for *what* edits are applied and *in what order*. The display is produced by
+applying the manifest to the disk image; the scattered transform flags of earlier designs
+(`m_rotationAngle`, `m_flippedH/V`, `m_cropApplied`, `m_bwActive`, …) no longer exist.
+
+**`ImageEdit`** is the common interface every editing module implements:
+
+| Member | Purpose |
+|---|---|
+| `apply(const QImage&) → QImage` | Apply this edit's settings to an in-memory buffer. Pure (no shared state) so a manifest can re-render from disk deterministically, off the GUI thread. The buffer is a `QImage`, not a `QPixmap`, precisely so it is thread-safe. |
+| `toJson()` / `fromJson()` | Round-trip the edit's settings through the persisted store. |
+| `clone()` | Deep copy (the manifest is value-semantic). |
+| `summary()` | Short tag for the metadata edit-state line (`90° rotation`, `crop`, `B&W`); empty to omit. |
+
+Three concrete edits implement it:
+
+- **`OrientationEdit`** — lossless rotation/flip. Stores the *net* linear transform (the
+  dihedral group) so repeated `R`/`H`/`V` presses compose exactly the way they did on screen,
+  and a reopened image reproduces the same orientation. It also keeps descriptive
+  rotation/flip counters that drive `summary()`.
+- **`CropEdit`** — a rectangle in **normalized** coordinates (fractions of the buffer, 0..1),
+  so it is resolution-independent. `apply()` copies that region out of the oriented image.
+- **`BwEdit`** — wraps `BwParams` and defers to `BwConverter::convert()`, making B&W conform
+  to the interface.
+
+`EditManifest` keeps its edits in canonical pipeline order (orientation → crop → B&W) via
+`editOrderIndex()`; `ensureOrientation()/ensureCrop()/ensureBw()` insert at the right slot,
+and an edit is present **only while it is applied** (removed when it returns to identity /
+full / reset-to-colour). `render()` folds `apply()` over the edits in order — the path used
+to reconstruct an image from disk. `summary()` joins the per-edit summaries.
+
+**Persistence:** `saveFor(path)` / `loadFor(path)` serialize the manifest to compact JSON
+stored in `QSettings`, keyed by a hash of the image's **absolute path** (under the
+`manifests/` group). Saving an empty manifest clears the entry. `MainWindow` calls
+`persistManifest()` after every edit, and `onImageLoaded()` loads and re-applies the saved
+manifest whenever an image is opened — so edits are remembered per file across sessions.
+
 ## The display pipeline
 
 Every feature that changes what's on screen participates in one ordered pipeline owned
@@ -88,26 +129,33 @@ by `MainWindow`. Order:
 
 1. **Disk image** — `ImageViewer::loadImage()` reads the file with
    `QImageReader::setAutoTransform(true)` (EXIF orientation is baked in at load). On the
-   `imagePathChanged` signal `MainWindow` captures it into the three pixmap fields below
-   and resets all transform state.
-2. **Orientation** — `R`/`H`/`V` → `applyOrientationTransform()`.
-3. **Crop** — `ImageViewer` owns the crop UI; on exit `MainWindow` folds the result into the base.
-4. **B&W** — `BwConverter::convert()` runs off-thread; non-destructive.
+   `imagePathChanged` signal `MainWindow::onImageLoaded()` captures it into `m_diskImage`,
+   loads that path's saved manifest, and re-derives the buffers below.
+2. **Orientation** — `R`/`H`/`V` → `applyOrientationStep()` composes a step onto the
+   manifest's `OrientationEdit`.
+3. **Crop** — `ImageViewer` owns the crop UI; on exit `MainWindow` folds the selection into
+   the manifest's `CropEdit` (normalized).
+4. **B&W** — the manifest's `BwEdit` runs off-thread via `BwConverter::convert()`; non-destructive.
 5. **Display** — `ImageViewer::setDisplayPixmap()` swaps the item's pixmap and refreshes
    the scene rect if dimensions changed (e.g. after a 90° rotation).
 
-### Pixmap state model (three fields in `MainWindow`)
+### Buffer state model (three `QImage` fields in `MainWindow`)
 
-| Field | Definition | Updated when | Never |
-|---|---|---|---|
-| `m_diskPixmap` | The image exactly as loaded from disk. | Load / navigation only. | Modified by crop, orientation, or B&W. |
-| `m_orientedDiskPixmap` | `m_diskPixmap` with all rotation/flip applied. The **full-size crop base** — always passed to `setBasePixmapForCrop()`. | Load/navigation (= disk) and every orientation change. | — |
-| `m_basePixmap` | `m_orientedDiskPixmap` with the current crop applied. The **B&W source**, restored by `deactivateBw()`. | Load/navigation (= disk), every crop apply, every orientation change. | Cleared. |
+Each buffer is *derived* from the manifest applied to the previous stage — `MainWindow` does
+not store transform state independently of the manifest. `rebuildOriented()` and
+`rebuildBase()` recompute them via the edit interface.
 
-**Contract for any new display-transform feature:** read input from `m_basePixmap`,
-write output through `setDisplayPixmap()`. If the feature *permanently* changes image
-content (like crop/orientation), update `m_basePixmap`. If it's a non-destructive view
-transform (like B&W), leave `m_basePixmap` alone.
+| Field | Definition | Recomputed when |
+|---|---|---|
+| `m_diskImage` | The image exactly as loaded from disk. | Load / navigation only (never edited). |
+| `m_orientedImage` | `OrientationEdit::apply(m_diskImage)`. The **full-size crop base** — passed to `setBasePixmapForCrop()`. | `rebuildOriented()`: load and every orientation change. |
+| `m_baseImage` | `CropEdit::apply(m_orientedImage)`. The **B&W source**. | `rebuildBase()`: load, every crop apply, every orientation change. |
+
+**Contract for any new display-transform feature:** add an `ImageEdit` subclass, store its
+settings in the `EditManifest`, read input from `m_baseImage`, and write output through
+`setDisplayPixmap()`. Mutate the manifest, re-derive the buffers, and call
+`persistManifest()` — that is the only way an edit is applied. A non-destructive view
+transform (like B&W) leaves `m_baseImage` alone.
 
 ## Crop tool (in `ImageViewer`)
 
@@ -123,27 +171,32 @@ transform (like B&W), leave `m_basePixmap` alone.
   clamped to the image). `drawForeground()` paints the dark mask over excluded regions
   (scene coords) plus a white border and eight handles (viewport coords).
 - **Exit/apply** (`setCropMode(false)`): copies the selected rect out of the current
-  pixmap and sets it on the item, then emits `cropModeChanged(false)`. `MainWindow` then
-  sets `m_basePixmap = viewer->pixmap()`, re-arms the crop base to `m_orientedDiskPixmap`,
-  and re-runs B&W if active.
+  pixmap and sets it on the item, then emits `cropModeChanged(false)`. `MainWindow` reads
+  `viewer->cropRect()`, folds it into the manifest's `CropEdit` as a **normalized** rect
+  (removing the edit if it covers the full image), re-derives `m_baseImage` via
+  `rebuildBase()`, persists, and re-runs B&W if active.
 - `setCropRect()` clamps against `m_cropBasePixmap` when set, which lets `MainWindow`
   store a *transformed* crop rect while crop is inactive (see orientation below).
 
-## Orientation (`MainWindow::applyOrientationTransform`)
+## Orientation (`MainWindow::applyOrientationStep`)
 
 - If crop is active, it's applied first so the rotation acts on the cropped image.
+- The step (`OrientationStep::RotateCW` / `FlipH` / `FlipV`) is composed onto the manifest's
+  `OrientationEdit`, which accumulates the **net** dihedral transform. `rebuildOriented()`
+  re-derives `m_orientedImage = OrientationEdit::apply(m_diskImage)` — a single transform of
+  the disk image, never an incremental transform of a transform.
 - `QPixmap::trueMatrix(t, w, h)` reproduces the translation Qt adds when transforming,
   which is used to map the saved crop rect into the new coordinate space — so re-entering
   crop still pre-selects the same region after a rotate/flip.
-- Order matters: the crop base is re-armed to the new `m_orientedDiskPixmap` **before**
-  the crop rect is remapped, because `setCropRect()` clamps against the crop base. A
-  90°/270° rotation swaps width and height, so clamping against the stale bounds would
-  clip the rotated selection.
-- Updates `m_orientedDiskPixmap`, re-arms the crop base, remaps the crop rect, transforms
-  `m_basePixmap`, then either re-runs B&W (if active) or pushes the result via
-  `setDisplayPixmap()`.
-- `R` accumulates `m_rotationAngle` mod 360; `H`/`V` toggle `m_flippedH` / `m_flippedV`.
-  These flags feed the metadata edit-state line.
+- Order matters: the crop base is re-armed to the new `m_orientedImage` (in
+  `rebuildOriented()`) **before** the crop rect is remapped, because `setCropRect()` clamps
+  against the crop base. A 90°/270° rotation swaps width and height, so clamping against the
+  stale bounds would clip the rotated selection.
+- After remapping, the `CropEdit`'s normalized rect is updated from the (clamped)
+  `viewer->cropRect()`, `rebuildBase()` runs, the manifest is persisted, and B&W re-runs (if
+  active) or `m_baseImage` is pushed via `setDisplayPixmap()`.
+- `OrientationEdit::summary()` (`90° rotation`, `H flip`, `V flip`) feeds the metadata
+  edit-state line.
 
 ## Black & white conversion
 
@@ -181,16 +234,19 @@ loop is kept free of `pow`/`exp` by two per-image LUTs (linear→sRGB, and the f
 curve, which is a pure function of the grey value).
 
 **Threading & state (`MainWindow`):**
-- `convert()` runs via `QtConcurrent::run` + `QFutureWatcher`; the UI never blocks.
+- B&W is "active" exactly when the manifest holds a `BwEdit` (`bwActive()`). Activating it
+  (`W`) records the panel's current look into the manifest; "Reset to Color" removes it.
+- The off-thread job is `BwEdit::apply()` (a value copy of the manifest's edit) run via
+  `QtConcurrent::run` + `QFutureWatcher` on `m_baseImage`; the UI never blocks.
 - `m_bwDebounce` (50 ms) coalesces slider drags; if a conversion is already running it
-  reschedules.
-- `m_originalImage = m_basePixmap.toImage()` is the cached source; `m_lastBwPixmap` is the
-  latest result. The watcher only pushes the result to the viewer when B&W is active, not
-  comparing, and not mid-crop.
-- **Compare** (`\` or the panel button) toggles between `m_basePixmap` (color) and
+  reschedules. Slider/look changes write straight into the manifest's `BwEdit` and persist.
+- `m_baseImage` is the source; `m_lastBwPixmap` is the latest result. The watcher only pushes
+  the result to the viewer when B&W is active, not comparing, and not mid-crop.
+- **Compare** (`\` or the panel button) toggles between `m_baseImage` (color) and
   `m_lastBwPixmap`.
-- `deactivateBw()` restores `m_basePixmap`, clears the B&W caches (but **not**
-  `m_basePixmap`), and hides the panel. It's called on every image load/navigation.
+- `deactivateBw()` removes the `BwEdit`, restores `m_baseImage`, clears the B&W caches, and
+  hides the panel. On image load, `onImageLoaded()` instead re-applies any saved `BwEdit`
+  (loading its look into the panel and re-running the conversion).
 
 **`BwPanel`** is a frameless translucent `Qt::Tool` widget docked bottom-left. Seven look
 buttons (exclusive `QButtonGroup`) sit above six hue-band sliders and a contrast slider,
@@ -220,10 +276,11 @@ lat/long so repeat views don't refetch. Stale replies are dropped by comparing a
 `m_pendingGeoKey`.
 
 **Live edit state:** `MainWindow::imageStateData()` injects a `{State_Edits}` summary
-(`90° rotation · H flip · crop · B&W`), authoritative `{Dimensions}` (the EXIF-oriented
-size as loaded, so it is always present and correct after edits), and `{CurrentDimensions}`
-(the edited size, shown only when it differs) into the data before the overlay is shown,
-so the overlay reflects in-memory edits, not just the file's EXIF.
+(`EditManifest::summary()`, e.g. `90° rotation · H flip · crop · B&W`), authoritative
+`{Dimensions}` (the EXIF-oriented size as loaded from `m_diskImage`, so it is always present
+and correct after edits), and `{CurrentDimensions}` (the edited `m_baseImage` size, shown
+only when it differs) into the data before the overlay is shown, so the overlay reflects
+in-memory edits, not just the file's EXIF.
 
 ## Image format support
 
@@ -248,8 +305,9 @@ include the `qtiff` plugin for this export to work at runtime — see `doc/WINDO
 1. If it reacts to a key, add the case to `ImageViewer::keyPressEvent` and **emit a
    signal** rather than acting directly (unless it's pure view state).
 2. Wire the signal to a handler in the `MainWindow` constructor.
-3. If it transforms the image, read `m_basePixmap`, write `setDisplayPixmap()`, and obey
-   the pixmap-state contract above.
+3. If it transforms the image, add an `ImageEdit` subclass, store its settings in the
+   `EditManifest`, read `m_baseImage`, write `setDisplayPixmap()`, and obey the buffer-state
+   contract above (mutate the manifest → re-derive the buffers → `persistManifest()`).
 4. Long-running work goes off-thread (`QtConcurrent` + `QFutureWatcher`), mirroring B&W.
 5. New overlay/panel: resize it in `MainWindow::resizeEvent`, add it to the Escape
    priority chain, and `raise()` it on show.

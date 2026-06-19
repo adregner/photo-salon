@@ -56,25 +56,37 @@ is in **`doc/ARCHITECTURE.md`**. The essentials:
 - **`ImageViewer`** (`QGraphicsView`) — display + input; owns the scene and the single
   pixmap item. It never holds transform/business state: keys it doesn't act on directly
   become **signals**.
-- **`MainWindow`** (`QMainWindow`) — orchestrator; owns every overlay/panel and **all
-  image-transform state**, and runs the display pipeline. Wires viewer signals to handlers.
+- **`MainWindow`** (`QMainWindow`) — orchestrator; owns every overlay/panel and the
+  **`EditManifest`** (the canonical edit state), and runs the display pipeline. Wires
+  viewer signals to handlers.
 - **`main.cpp`** — CLI parsing only. An empty path is valid (idle state).
+
+### The edit manifest (canonical edit state)
+
+All modifications live in one ordered **`EditManifest`** owned by `MainWindow`. It is the
+single source of truth for *what* is applied and *in what order*. Each modification is an
+**`ImageEdit`** — a common interface (`apply(QImage)` on an in-memory buffer, plus JSON
+(de)serialization) implemented by `OrientationEdit`, `CropEdit`, and `BwEdit`. The manifest
+is **persisted in `QSettings`, keyed by the image's absolute path**, so reopening the same
+file re-applies the same edits (`EditManifest::saveFor` / `loadFor`).
 
 ### Display pipeline & pixmap state
 
 Features that change the screen run in one ordered pipeline owned by `MainWindow`:
-**disk → orientation → crop → B&W → display**. Three pixmap fields track state:
+**disk → orientation → crop → B&W → display**. The buffers are **`QImage`** (so edits run
+off the GUI thread), each *derived from the manifest* applied to the previous stage:
 
 | Field | Meaning |
 |---|---|
-| `m_diskPixmap` | Image exactly as loaded (EXIF-oriented at load). Never touched by edits. |
-| `m_orientedDiskPixmap` | Disk pixmap + rotation/flip. The full-size **crop base**. |
-| `m_basePixmap` | Oriented pixmap + crop applied. The **B&W source**; never cleared. |
+| `m_diskImage` | Image exactly as loaded (EXIF-oriented at load). Never touched by edits. |
+| `m_orientedImage` | `m_diskImage` with the manifest's `OrientationEdit` applied. The full-size **crop base**. |
+| `m_baseImage` | `m_orientedImage` with the manifest's `CropEdit` applied. The **B&W source**. |
 
-**New display-transform features must:** read input from `m_basePixmap`, write output via
-`ImageViewer::setDisplayPixmap()`. If the change is permanent (crop/orientation), update
-`m_basePixmap`; if non-destructive (B&W), leave it. Long-running work goes off the main
-thread (`QtConcurrent` + `QFutureWatcher`), like B&W.
+**New display-transform features must:** add an `ImageEdit` subclass, store its settings in
+the `EditManifest`, and read input from `m_baseImage` / write output via
+`ImageViewer::setDisplayPixmap()`. Mutating the manifest then re-deriving the buffers (and
+calling `persistManifest()`) is the only way edits are applied. Long-running work goes off
+the main thread (`QtConcurrent` + `QFutureWatcher`), like B&W.
 
 ## Key Qt gotchas
 
@@ -92,6 +104,7 @@ thread (`QtConcurrent` + `QFutureWatcher`), like B&W.
 | Topic | File |
 |---|---|
 | Architecture, pipeline, event routing, feature internals | `doc/ARCHITECTURE.md` |
+| Edit manifest, `ImageEdit` interface, persistence | `src/EditManifest.h`, `src/ImageEdit.h`, `doc/ARCHITECTURE.md` |
 | Build system, deps, tests, packaging, CI release | `doc/BUILD.md` |
 | Windows cross-compile & code signing | `doc/WINDOWS.md` |
 | End-user install / run / packaging | `README.md` |

@@ -47,6 +47,8 @@ add_library(photo-salon-lib STATIC
     src/BackgroundColorPicker.cpp
     src/BwConverter.cpp
     src/BwPanel.cpp
+    src/ImageEdit.cpp
+    src/EditManifest.cpp
     src/ExitOverlay.cpp
     src/ExifReader.cpp
     src/ExifOverlay.cpp
