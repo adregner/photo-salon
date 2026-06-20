@@ -53,17 +53,25 @@ void EditManifest::remove(const QString &type) {
 
 OrientationEdit *EditManifest::orientation() { return static_cast<OrientationEdit *>(find(QStringLiteral("orientation"))); }
 CropEdit        *EditManifest::crop()        { return static_cast<CropEdit *>(find(QStringLiteral("crop"))); }
+AdjustEdit      *EditManifest::adjust()      { return static_cast<AdjustEdit *>(find(QStringLiteral("adjust"))); }
+ColorEdit       *EditManifest::color()       { return static_cast<ColorEdit *>(find(QStringLiteral("color"))); }
 BwEdit          *EditManifest::bw()          { return static_cast<BwEdit *>(find(QStringLiteral("bw"))); }
 const OrientationEdit *EditManifest::orientation() const { return static_cast<const OrientationEdit *>(find(QStringLiteral("orientation"))); }
 const CropEdit        *EditManifest::crop() const        { return static_cast<const CropEdit *>(find(QStringLiteral("crop"))); }
+const AdjustEdit      *EditManifest::adjust() const      { return static_cast<const AdjustEdit *>(find(QStringLiteral("adjust"))); }
+const ColorEdit       *EditManifest::color() const       { return static_cast<const ColorEdit *>(find(QStringLiteral("color"))); }
 const BwEdit          *EditManifest::bw() const          { return static_cast<const BwEdit *>(find(QStringLiteral("bw"))); }
 
 OrientationEdit &EditManifest::ensureOrientation() { return static_cast<OrientationEdit &>(ensure(QStringLiteral("orientation"))); }
 CropEdit        &EditManifest::ensureCrop()        { return static_cast<CropEdit &>(ensure(QStringLiteral("crop"))); }
+AdjustEdit      &EditManifest::ensureAdjust()      { return static_cast<AdjustEdit &>(ensure(QStringLiteral("adjust"))); }
+ColorEdit       &EditManifest::ensureColor()       { return static_cast<ColorEdit &>(ensure(QStringLiteral("color"))); }
 BwEdit          &EditManifest::ensureBw()          { return static_cast<BwEdit &>(ensure(QStringLiteral("bw"))); }
 
 void EditManifest::removeOrientation() { remove(QStringLiteral("orientation")); }
 void EditManifest::removeCrop()        { remove(QStringLiteral("crop")); }
+void EditManifest::removeAdjust()      { remove(QStringLiteral("adjust")); }
+void EditManifest::removeColor()       { remove(QStringLiteral("color")); }
 void EditManifest::removeBw()          { remove(QStringLiteral("bw")); }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +81,15 @@ QImage EditManifest::render(const QImage &in) const {
     QImage out = in;
     for (const auto &e : m_edits)
         out = e->apply(out);
+    return out;
+}
+
+QImage EditManifest::renderAfterCrop(const QImage &base) const {
+    const int cropOrder = editOrderIndex(QStringLiteral("crop"));
+    QImage out = base;
+    for (const auto &e : m_edits)
+        if (editOrderIndex(e->type()) > cropOrder)
+            out = e->apply(out);
     return out;
 }
 

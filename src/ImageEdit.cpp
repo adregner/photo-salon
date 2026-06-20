@@ -1,4 +1,5 @@
 #include "ImageEdit.h"
+#include <QJsonArray>
 #include <QJsonValue>
 #include <QStringList>
 #include <cmath>
@@ -9,13 +10,17 @@
 int editOrderIndex(const QString &type) {
     if (type == QLatin1String("orientation")) return 0;
     if (type == QLatin1String("crop"))        return 1;
-    if (type == QLatin1String("bw"))          return 2;
+    if (type == QLatin1String("adjust"))      return 2;
+    if (type == QLatin1String("color"))       return 3;
+    if (type == QLatin1String("bw"))          return 4;
     return 99;  // unknown types sort last
 }
 
 std::unique_ptr<ImageEdit> makeEdit(const QString &type) {
     if (type == QLatin1String("orientation")) return std::make_unique<OrientationEdit>();
     if (type == QLatin1String("crop"))        return std::make_unique<CropEdit>();
+    if (type == QLatin1String("adjust"))      return std::make_unique<AdjustEdit>();
+    if (type == QLatin1String("color"))       return std::make_unique<ColorEdit>();
     if (type == QLatin1String("bw"))          return std::make_unique<BwEdit>();
     return nullptr;
 }
@@ -152,6 +157,106 @@ void CropEdit::fromJson(const QJsonObject &obj) {
 
 QString CropEdit::summary() const {
     return isFull() ? QString() : QStringLiteral("crop");
+}
+
+// ---------------------------------------------------------------------------
+// AdjustEdit
+// ---------------------------------------------------------------------------
+std::unique_ptr<ImageEdit> AdjustEdit::clone() const {
+    return std::make_unique<AdjustEdit>(*this);
+}
+
+QJsonObject AdjustEdit::toJson() const {
+    QJsonObject o;
+    o["type"]       = type();
+    o["brightness"] = m_params.brightness;
+    o["contrast"]   = m_params.contrast;
+    o["exposure"]   = m_params.exposure;
+    o["saturation"] = m_params.saturation;
+    o["blacks"]     = m_params.blacks;
+    o["whites"]     = m_params.whites;
+    return o;
+}
+
+void AdjustEdit::fromJson(const QJsonObject &obj) {
+    auto v = [&](const char *k) { return qBound(-100, obj.value(QLatin1String(k)).toInt(0), 100); };
+    m_params.brightness = v("brightness");
+    m_params.contrast   = v("contrast");
+    m_params.exposure   = v("exposure");
+    m_params.saturation = v("saturation");
+    m_params.blacks     = v("blacks");
+    m_params.whites     = v("whites");
+}
+
+QString AdjustEdit::summary() const {
+    if (ImageAdjust::isNeutral(m_params)) return QString();
+    QStringList parts;
+    auto add = [&](const char *label, int v) {
+        if (v != 0) parts << QStringLiteral("%1 %2%3").arg(QLatin1String(label),
+                                                           v > 0 ? QStringLiteral("+") : QString(),
+                                                           QString::number(v));
+    };
+    add("brightness", m_params.brightness);
+    add("contrast",   m_params.contrast);
+    add("exposure",   m_params.exposure);
+    add("saturation", m_params.saturation);
+    add("blacks",     m_params.blacks);
+    add("whites",     m_params.whites);
+    return parts.join(QStringLiteral(", "));
+}
+
+// ---------------------------------------------------------------------------
+// ColorEdit
+// ---------------------------------------------------------------------------
+std::unique_ptr<ImageEdit> ColorEdit::clone() const {
+    return std::make_unique<ColorEdit>(*this);
+}
+
+QJsonObject ColorEdit::toJson() const {
+    QJsonObject o;
+    o["type"]        = type();
+    o["temperature"] = m_params.temperature;
+    o["tint"]        = m_params.tint;
+    o["red"]         = m_params.red;
+    o["green"]       = m_params.green;
+    o["blue"]        = m_params.blue;
+    QJsonArray hues;
+    for (int v : m_params.hues)
+        hues.append(v);
+    o["hues"] = hues;
+    return o;
+}
+
+void ColorEdit::fromJson(const QJsonObject &obj) {
+    auto v = [&](const char *k) { return qBound(-100, obj.value(QLatin1String(k)).toInt(0), 100); };
+    m_params.temperature = v("temperature");
+    m_params.tint        = v("tint");
+    m_params.red         = v("red");
+    m_params.green       = v("green");
+    m_params.blue        = v("blue");
+    const QJsonArray hues = obj.value(QLatin1String("hues")).toArray();
+    for (int i = 0; i < 8; ++i)
+        m_params.hues[i] = qBound(-100, hues.at(i).toInt(0), 100);
+}
+
+QString ColorEdit::summary() const {
+    if (ImageAdjust::isNeutral(m_params)) return QString();
+    QStringList parts;
+    auto add = [&](const QString &label, int v) {
+        if (v != 0) parts << QStringLiteral("%1 %2%3").arg(label,
+                                                           v > 0 ? QStringLiteral("+") : QString(),
+                                                           QString::number(v));
+    };
+    add(QStringLiteral("temp"),  m_params.temperature);
+    add(QStringLiteral("tint"),  m_params.tint);
+    add(QStringLiteral("red"),   m_params.red);
+    add(QStringLiteral("green"), m_params.green);
+    add(QStringLiteral("blue"),  m_params.blue);
+    // Per-hue saturation bands, named and suffixed so they don't read like the
+    // red/green/blue channel gains above.
+    for (int i = 0; i < 8; ++i)
+        add(QString::fromLatin1(ImageAdjust::hueBand(i).name) + QStringLiteral(" sat"), m_params.hues[i]);
+    return parts.join(QStringLiteral(", "));
 }
 
 // ---------------------------------------------------------------------------

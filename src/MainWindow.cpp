@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "AdjustPanel.h"
 #include "BackgroundColorPicker.h"
 #include "BwConverter.h"
 #include "BwPanel.h"
@@ -177,44 +178,66 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
             updateExternalEditorName();
     });
 
-    m_bwDebounce = new QTimer(this);
-    m_bwDebounce->setSingleShot(true);
-    m_bwDebounce->setInterval(50);
-    connect(m_bwDebounce, &QTimer::timeout, this, &MainWindow::applyBwConversion);
+    // One debounce + one off-thread worker drive the whole post-crop pipeline
+    // (adjust → color → B&W), so the panels never race each other on the display.
+    m_renderDebounce = new QTimer(this);
+    m_renderDebounce->setSingleShot(true);
+    m_renderDebounce->setInterval(50);
+    connect(m_renderDebounce, &QTimer::timeout, this, &MainWindow::applyRender);
 
-    m_bwWatcher = new QFutureWatcher<QImage>(this);
-    connect(m_bwWatcher, &QFutureWatcher<QImage>::finished, this, [this]() {
-        m_lastBwImage  = m_bwWatcher->result();
-        m_lastBwPixmap = QPixmap::fromImage(m_lastBwImage);
-        // Don't clobber the crop UI or show a stale result while crop is active.
-        if (bwActive() && !m_bwComparing && !m_viewer->cropMode())
-            m_viewer->setDisplayPixmap(m_lastBwPixmap);
+    m_renderWatcher = new QFutureWatcher<QImage>(this);
+    connect(m_renderWatcher, &QFutureWatcher<QImage>::finished, this, [this]() {
+        m_lastRenderPixmap = QPixmap::fromImage(m_renderWatcher->result());
+        // Don't clobber the crop UI, show a stale result, or override compare.
+        if (hasDisplayEdits() && !m_comparing && !m_viewer->cropMode())
+            m_viewer->setDisplayPixmap(m_lastRenderPixmap);
+    });
+
+    m_adjustPanel = new AdjustPanel(this);
+    m_adjustPanel->hide();
+    connect(viewer, &ImageViewer::adjustPanelRequested, this, &MainWindow::onAdjustPanelRequested);
+
+    // Light/tone and colour changes flow into their own manifest edits (created
+    // only while non-neutral) and are persisted, then a render is scheduled.
+    connect(m_adjustPanel, &AdjustPanel::adjustParamsChanged, this, [this](const AdjustParams &p) {
+        if (ImageAdjust::isNeutral(p)) m_manifest.removeAdjust();
+        else                           m_manifest.ensureAdjust().setParams(p);
+        persistManifest();
+        scheduleRender();
+    });
+    connect(m_adjustPanel, &AdjustPanel::colorParamsChanged, this, [this](const ColorParams &p) {
+        if (ImageAdjust::isNeutral(p)) m_manifest.removeColor();
+        else                           m_manifest.ensureColor().setParams(p);
+        persistManifest();
+        scheduleRender();
     });
 
     m_bwPanel = new BwPanel(this);
     m_bwPanel->hide();
 
     connect(viewer, &ImageViewer::bwPanelRequested,  this, &MainWindow::onBwPanelRequested);
-    connect(viewer, &ImageViewer::bwCompareRequested, this, &MainWindow::toggleBwCompare);
+    connect(viewer, &ImageViewer::bwCompareRequested, this, &MainWindow::toggleCompare);
 
     // Slider/look changes flow straight into the manifest's B&W edit (the canonical
-    // settings) and are persisted, then a (debounced) re-conversion is scheduled.
+    // settings) and are persisted, then a (debounced) re-render is scheduled.
     connect(m_bwPanel, &BwPanel::paramsChanged, this, [this](const BwParams &p) {
-        if (bwActive() && !m_bwComparing) {
+        if (bwActive() && !m_comparing) {
             m_manifest.bw()->setParams(p);
             persistManifest();
-            m_bwDebounce->start();
+            scheduleRender();
         }
     });
 
     connect(m_bwPanel, &BwPanel::compareToggled, this, [this](bool showOriginal) {
-        m_bwComparing = showOriginal;
-        m_bwPanel->setComparing(m_bwComparing);
-        if (!bwActive() || m_baseImage.isNull()) return;
+        m_comparing = showOriginal;
+        m_bwPanel->setComparing(m_comparing);
+        if (!hasDisplayEdits() || m_baseImage.isNull()) return;
         if (showOriginal)
             showBase();
-        else if (!m_lastBwPixmap.isNull())
-            m_viewer->setDisplayPixmap(m_lastBwPixmap);
+        else if (!m_lastRenderPixmap.isNull())
+            m_viewer->setDisplayPixmap(m_lastRenderPixmap);
+        else
+            scheduleRender();
     });
 
     connect(m_bwPanel, &BwPanel::resetToColorRequested, this, &MainWindow::deactivateBw);
@@ -224,8 +247,8 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
     // the manifest the single source of truth for the pipeline base → crop → B&W.
     connect(viewer, &ImageViewer::cropModeChanged, this, [this, viewer](bool cropActive) {
         if (cropActive) {
-            // Entering crop: stop any pending BW work; the crop UI shows the color image.
-            m_bwDebounce->stop();
+            // Entering crop: stop any pending render; the crop UI shows the color image.
+            m_renderDebounce->stop();
             return;
         }
         QRectF sel = viewer->cropRect();
@@ -237,13 +260,12 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
             m_manifest.removeCrop();
         rebuildBase();
         persistManifest();
-        if (bwActive()) {
-            m_bwComparing = false;
-            m_bwPanel->setComparing(false);
-            applyBwConversion();
-        } else {
+        m_comparing = false;
+        m_bwPanel->setComparing(false);
+        if (hasDisplayEdits())
+            applyRender();
+        else
             showBase();
-        }
     });
 
     connect(viewer, &ImageViewer::folderBrowseRequested, this, [this, viewer]() {
@@ -321,11 +343,10 @@ void MainWindow::onImageLoaded(const QString &path) {
     m_diskImage = m_viewer->pixmap().toImage();
     m_manifest  = EditManifest::loadFor(path);
 
-    // Reset transient B&W view state for the new image.
-    m_bwComparing = false;
-    m_bwDebounce->stop();
-    m_lastBwImage  = {};
-    m_lastBwPixmap = {};
+    // Reset transient view state for the new image.
+    m_comparing = false;
+    m_renderDebounce->stop();
+    m_lastRenderPixmap = {};
 
     rebuildOriented();
 
@@ -335,24 +356,28 @@ void MainWindow::onImageLoaded(const QString &path) {
 
     rebuildBase();
 
-    if (m_manifest.bw()) {
-        // Load the saved look into the panel without re-triggering conversion, then
-        // run it once. Until it finishes, show the color base rather than flashing
-        // the unedited disk image.
-        {
-            QSignalBlocker block(m_bwPanel);
-            m_bwPanel->setParams(m_manifest.bw()->params());
-        }
-        m_bwPanel->setComparing(false);
-        showBase();
-        applyBwConversion();
-    } else {
-        if (m_bwPanel) {
-            m_bwPanel->setComparing(false);
-            m_bwPanel->hide();
-        }
-        showBase();
+    // Load any saved adjust/color/B&W settings into the panels without
+    // re-triggering a render (the render is scheduled once, below).
+    {
+        QSignalBlocker block(m_adjustPanel);
+        m_adjustPanel->setAdjustParams(m_manifest.adjust() ? m_manifest.adjust()->params() : AdjustParams{});
+        m_adjustPanel->setColorParams(m_manifest.color() ? m_manifest.color()->params() : ColorParams{});
     }
+    if (m_manifest.bw()) {
+        QSignalBlocker block(m_bwPanel);
+        m_bwPanel->setParams(m_manifest.bw()->params());
+    }
+    m_bwPanel->setComparing(false);
+
+    // New image: dismiss any open panels so they reopen against the new state.
+    m_adjustPanel->hide();
+    m_bwPanel->hide();
+
+    // Show the color base first (so we never flash the unedited disk image while a
+    // render runs), then render the post-crop edits if there are any.
+    showBase();
+    if (hasDisplayEdits())
+        applyRender();
 }
 
 void MainWindow::rebuildOriented() {
@@ -399,6 +424,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         }
         if (m_bwPanel && m_bwPanel->isVisible()) {
             m_bwPanel->hide();
+            return true;
+        }
+        if (m_adjustPanel && m_adjustPanel->isVisible()) {
+            m_adjustPanel->hide();
             return true;
         }
         if (m_viewer && m_viewer->cropMode()) {
@@ -467,6 +496,70 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
         int y = height() - m_bwPanel->sizeHint().height() - 10;
         m_bwPanel->move(10, y);
     }
+    if (m_adjustPanel && m_adjustPanel->isVisible()) {
+        int y = height() - m_adjustPanel->sizeHint().height() - 10;
+        m_adjustPanel->move(10, y);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Live display pipeline (shared by adjust, color, and B&W)
+// ---------------------------------------------------------------------------
+bool MainWindow::hasDisplayEdits() const {
+    return m_manifest.adjust() != nullptr
+        || m_manifest.color() != nullptr
+        || m_manifest.bw() != nullptr;
+}
+
+void MainWindow::scheduleRender() {
+    if (m_baseImage.isNull()) return;
+    // Comparing or no post-crop edits → just show the color base; nothing to render.
+    if (m_comparing || !hasDisplayEdits()) {
+        showBase();
+        return;
+    }
+    if (m_viewer->cropMode()) return;   // crop UI owns the display while active
+    m_renderDebounce->start();
+}
+
+void MainWindow::applyRender() {
+    if (m_baseImage.isNull()) return;
+    if (!hasDisplayEdits()) { showBase(); return; }
+    if (m_renderWatcher->isRunning()) {
+        m_renderDebounce->start();
+        return;
+    }
+    // Apply the post-crop edits off the GUI thread via the manifest's own render
+    // path. The manifest is value-semantic, so the copy keeps the worker
+    // independent of any later edit changes.
+    QImage base = m_baseImage;
+    EditManifest snapshot = m_manifest;
+    m_renderWatcher->setFuture(
+        QtConcurrent::run([base, snapshot]() { return snapshot.renderAfterCrop(base); }));
+}
+
+// ---------------------------------------------------------------------------
+// Adjustments / color panel
+// ---------------------------------------------------------------------------
+void MainWindow::onAdjustPanelRequested() {
+    if (m_adjustPanel->isVisible()) {
+        m_adjustPanel->hide();
+        return;
+    }
+    if (m_baseImage.isNull()) return;
+
+    // Reflect the manifest's current settings without re-triggering a render.
+    {
+        QSignalBlocker block(m_adjustPanel);
+        m_adjustPanel->setAdjustParams(m_manifest.adjust() ? m_manifest.adjust()->params() : AdjustParams{});
+        m_adjustPanel->setColorParams(m_manifest.color() ? m_manifest.color()->params() : ColorParams{});
+    }
+
+    int y = height() - m_adjustPanel->sizeHint().height() - 10;
+    m_adjustPanel->move(10, y);
+    m_adjustPanel->show();
+    m_adjustPanel->raise();
+    m_adjustPanel->setFocus();
 }
 
 // ---------------------------------------------------------------------------
@@ -483,10 +576,10 @@ void MainWindow::onBwPanelRequested() {
         // Activating B&W records the panel's current look as a manifest edit.
         m_manifest.ensureBw().setParams(m_bwPanel->params());
         persistManifest();
-        applyBwConversion();
+        scheduleRender();
     }
 
-    m_bwPanel->setComparing(m_bwComparing);
+    m_bwPanel->setComparing(m_comparing);
     int x = 10;
     int y = height() - m_bwPanel->sizeHint().height() - 10;
     m_bwPanel->move(x, y);
@@ -495,45 +588,28 @@ void MainWindow::onBwPanelRequested() {
     m_bwPanel->setFocus();
 }
 
-void MainWindow::applyBwConversion() {
-    BwEdit *edit = m_manifest.bw();
-    if (!edit || m_baseImage.isNull()) return;
-    if (m_bwWatcher->isRunning()) {
-        m_bwDebounce->start();
-        return;
-    }
-    // Convert off the GUI thread via the edit's own apply() (a value copy keeps the
-    // worker independent of later manifest changes).
-    QImage src = m_baseImage;
-    BwEdit job = *edit;
-    m_bwWatcher->setFuture(
-        QtConcurrent::run([src, job]() { return job.apply(src); }));
-}
-
-void MainWindow::toggleBwCompare() {
-    if (!bwActive() || m_baseImage.isNull()) return;
-    m_bwComparing = !m_bwComparing;
-    m_bwPanel->setComparing(m_bwComparing);
-    if (m_bwComparing)
+void MainWindow::toggleCompare() {
+    if (!hasDisplayEdits() || m_baseImage.isNull()) return;
+    m_comparing = !m_comparing;
+    m_bwPanel->setComparing(m_comparing);
+    if (m_comparing)
         showBase();
-    else if (!m_lastBwPixmap.isNull())
-        m_viewer->setDisplayPixmap(m_lastBwPixmap);
+    else if (!m_lastRenderPixmap.isNull())
+        m_viewer->setDisplayPixmap(m_lastRenderPixmap);
+    else
+        scheduleRender();
 }
 
 void MainWindow::deactivateBw() {
     const bool wasActive = bwActive();
     m_manifest.removeBw();
-    m_bwComparing = false;
-    m_bwDebounce->stop();
     if (wasActive)
         persistManifest();
 
-    // Restore the color image. m_baseImage always holds the current in-memory color
-    // image (post-crop), so this is always the right thing to show.
-    showBase();
-
-    m_lastBwImage  = {};
-    m_lastBwPixmap = {};
+    // Re-render whatever post-crop edits remain (adjust/color), or restore the
+    // color base when B&W was the only one.
+    m_comparing = false;
+    scheduleRender();
 
     if (m_bwPanel) {
         m_bwPanel->setComparing(false);
@@ -587,13 +663,12 @@ void MainWindow::applyOrientationStep(OrientationStep step) {
     rebuildBase();
     persistManifest();
 
-    if (bwActive()) {
-        m_bwComparing = false;
-        m_bwPanel->setComparing(false);
-        applyBwConversion();
-    } else {
+    m_comparing = false;
+    m_bwPanel->setComparing(false);
+    if (hasDisplayEdits())
+        applyRender();
+    else
         showBase();
-    }
 }
 
 void MainWindow::exitApplication() {

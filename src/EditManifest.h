@@ -30,25 +30,39 @@ public:
     // that kind is not currently applied.
     OrientationEdit *orientation();
     CropEdit        *crop();
+    AdjustEdit      *adjust();
+    ColorEdit       *color();
     BwEdit          *bw();
     const OrientationEdit *orientation() const;
     const CropEdit        *crop() const;
+    const AdjustEdit      *adjust() const;
+    const ColorEdit       *color() const;
     const BwEdit          *bw() const;
 
     // Get-or-create the edit of a kind, inserted at its canonical pipeline
     // position. Use these to mutate an edit's settings.
     OrientationEdit &ensureOrientation();
     CropEdit        &ensureCrop();
+    AdjustEdit      &ensureAdjust();
+    ColorEdit       &ensureColor();
     BwEdit          &ensureBw();
 
     // Drop an edit (so it is no longer applied).
     void removeOrientation();
     void removeCrop();
+    void removeAdjust();
+    void removeColor();
     void removeBw();
 
     // Apply every edit, in order, to the buffer — the canonical render path used
     // when reconstructing an image from disk.
     QImage render(const QImage &in) const;
+
+    // Apply only the edits that come after crop (adjust → color → B&W) to an
+    // already cropped colour buffer. This is the live display pipeline's hot path:
+    // orientation and crop are cached as buffers, so the panels re-derive the
+    // shown image from the post-crop base alone.
+    QImage renderAfterCrop(const QImage &base) const;
 
     // "90° rotation · crop · B&W" — the edits' summaries joined in order.
     QString summary() const;

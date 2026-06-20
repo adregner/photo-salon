@@ -8,6 +8,7 @@
 #include <QTransform>
 #include <Qt>
 
+class AdjustPanel;
 class BackgroundColorPicker;
 class BwPanel;
 class ExifOverlay;
@@ -50,10 +51,18 @@ private:
     void showBase();          // push the (color) base image to the viewer
     void persistManifest();   // save the manifest for the current image path
     bool bwActive() const { return m_manifest.bw() != nullptr; }
+    // True when any post-crop edit (adjust / color / B&W) is applied, so the
+    // displayed image must be re-rendered off the base rather than shown as-is.
+    bool hasDisplayEdits() const;
 
+    // The single live-display pipeline shared by adjust, color, and B&W: derive
+    // the shown image from m_baseImage by applying the post-crop edits off-thread.
+    void scheduleRender();    // debounce, or show base directly when nothing applies
+    void applyRender();       // launch the off-thread render of the post-crop edits
+
+    void onAdjustPanelRequested();
     void onBwPanelRequested();
-    void applyBwConversion();
-    void toggleBwCompare();
+    void toggleCompare();
     void deactivateBw();
     void applyOrientationStep(OrientationStep step);
     void exitApplication();
@@ -78,10 +87,13 @@ private:
     QImage m_baseImage;      // oriented image with the crop edit applied (B&W source)
 
     BwPanel                *m_bwPanel       = nullptr;
-    QImage                  m_lastBwImage;
-    QPixmap                 m_lastBwPixmap;
-    bool                    m_bwComparing   = false;
-    QFutureWatcher<QImage> *m_bwWatcher     = nullptr;
-    QTimer                 *m_bwDebounce    = nullptr;
+    AdjustPanel            *m_adjustPanel   = nullptr;
+
+    // Shared live-display state for the post-crop edit pipeline.
+    QPixmap                 m_lastRenderPixmap;  // most recent rendered display image
+    bool                    m_comparing     = false;  // showing the original color base
+    QFutureWatcher<QImage> *m_renderWatcher = nullptr;
+    QTimer                 *m_renderDebounce = nullptr;
+
     QTimer                 *m_exitDebounce  = nullptr;
 };

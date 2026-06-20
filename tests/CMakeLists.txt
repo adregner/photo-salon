@@ -105,3 +105,15 @@ target_link_libraries(test_edit_manifest PRIVATE Qt6::Test photo-salon-lib)
 add_test(NAME test_edit_manifest COMMAND test_edit_manifest)
 set_tests_properties(test_edit_manifest PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(test_image_adjust test_image_adjust.cpp)
+target_link_libraries(test_image_adjust PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_image_adjust COMMAND test_image_adjust)
+set_tests_properties(test_image_adjust PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(test_adjust_panel test_adjust_panel.cpp)
+target_link_libraries(test_adjust_panel PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_adjust_panel COMMAND test_adjust_panel)
+set_tests_properties(test_adjust_panel PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

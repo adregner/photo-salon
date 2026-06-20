@@ -115,7 +115,11 @@ photo-salon <image.jpg>
 
 Opens the specified JPEG image in a resizable window, scaled to fit.
 
-Edits are **non-destructive and remembered per image**: rotation, flips, crop, and the
-black-&-white look are tracked in an internal change manifest that is saved locally and
-re-applied automatically the next time you open the same file. The original on disk is never
-modified — use `S` to save an edited copy.
+Edits are **non-destructive and remembered per image**: rotation, flips, crop, light/level
+and colour adjustments, and the black-&-white look are tracked in an internal change manifest
+that is saved locally and re-applied automatically the next time you open the same file. The
+original on disk is never modified — use `S` to save an edited copy.
+
+Press `?` in the app for the full list of shortcuts. The editing keys are `C` (adjust light,
+levels & colour — a two-tab pop-up panel), `X` (crop), `W` (black & white), `R` (rotate),
+`H` / `V` (flip), and `\` (compare against the original colour image).

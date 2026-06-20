@@ -1,5 +1,6 @@
 #pragma once
 #include "BwConverter.h"
+#include "ImageAdjust.h"
 #include <QImage>
 #include <QJsonObject>
 #include <QRectF>
@@ -42,7 +43,8 @@ public:
     virtual QString summary() const = 0;
 };
 
-// Canonical pipeline position of an edit type (disk → orientation → crop → B&W).
+// Canonical pipeline position of an edit type
+// (disk → orientation → crop → adjust → color → B&W).
 // EditManifest uses this to keep its ordered list stable; lower applies first.
 int editOrderIndex(const QString &type);
 
@@ -111,6 +113,49 @@ public:
 
 private:
     QRectF m_rect = QRectF(0.0, 0.0, 1.0, 1.0);
+};
+
+// ---------------------------------------------------------------------------
+// AdjustEdit — non-destructive light/tone adjustment (brightness, contrast,
+// exposure, saturation, black/white levels). Wraps AdjustParams and defers to
+// ImageAdjust::applyTone(). Applies before colour and B&W.
+// ---------------------------------------------------------------------------
+class AdjustEdit : public ImageEdit {
+public:
+    QString type() const override { return QStringLiteral("adjust"); }
+    QImage  apply(const QImage &in) const override { return ImageAdjust::applyTone(in, m_params); }
+    std::unique_ptr<ImageEdit> clone() const override;
+    QJsonObject toJson() const override;
+    void fromJson(const QJsonObject &obj) override;
+    QString summary() const override;
+
+    AdjustParams params() const { return m_params; }
+    void         setParams(const AdjustParams &p) { m_params = p; }
+
+private:
+    AdjustParams m_params;
+};
+
+// ---------------------------------------------------------------------------
+// ColorEdit — non-destructive colour-balance adjustment (temperature, tint, and
+// per-channel red/green/blue gains). Wraps ColorParams and defers to
+// ImageAdjust::applyColor(). A separate manifest step from AdjustEdit, applied
+// after the tone curve and before B&W.
+// ---------------------------------------------------------------------------
+class ColorEdit : public ImageEdit {
+public:
+    QString type() const override { return QStringLiteral("color"); }
+    QImage  apply(const QImage &in) const override { return ImageAdjust::applyColor(in, m_params); }
+    std::unique_ptr<ImageEdit> clone() const override;
+    QJsonObject toJson() const override;
+    void fromJson(const QJsonObject &obj) override;
+    QString summary() const override;
+
+    ColorParams params() const { return m_params; }
+    void        setParams(const ColorParams &p) { m_params = p; }
+
+private:
+    ColorParams m_params;
 };
 
 // ---------------------------------------------------------------------------

@@ -49,6 +49,7 @@ signals:
     void saveRequested();
     void bwPanelRequested();
     void bwCompareRequested();
+    void adjustPanelRequested();
     void rotateRequested();
     void flipHorizontalRequested();
     void flipVerticalRequested();

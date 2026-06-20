@@ -69,9 +69,10 @@ sinks (viewport, scene, child widgets) that would otherwise swallow keys.
 | `F` | Toggle fullscreen | → `fullscreenToggleRequested` |
 | `B` | Background color picker | → `backgroundPickerRequested` |
 | `I` | Toggle metadata overlay | → `exifRequested` |
-| `C` | Toggle crop mode | `setCropMode()` |
+| `C` | Toggle light/levels & color panel | → `adjustPanelRequested` |
+| `X` | Toggle crop mode | `setCropMode()` |
 | `W` | Toggle B&W panel / conversion | → `bwPanelRequested` |
-| `\` | Compare against original (B&W) | → `bwCompareRequested` |
+| `\` | Compare against original color image | → `bwCompareRequested` (`toggleCompare`) |
 | `R` | Rotate 90° clockwise | → `rotateRequested` |
 | `H` / `V` | Flip horizontal / vertical | → `flipHorizontalRequested` / `flipVerticalRequested` |
 | `S` | Save current displayed image | → `saveRequested` |
@@ -99,7 +100,7 @@ applying the manifest to the disk image; the scattered transform flags of earlie
 | `clone()` | Deep copy (the manifest is value-semantic). |
 | `summary()` | Short tag for the metadata edit-state line (`90° rotation`, `crop`, `B&W`); empty to omit. |
 
-Three concrete edits implement it:
+Five concrete edits implement it:
 
 - **`OrientationEdit`** — lossless rotation/flip. Stores the *net* linear transform (the
   dihedral group) so repeated `R`/`H`/`V` presses compose exactly the way they did on screen,
@@ -107,14 +108,24 @@ Three concrete edits implement it:
   rotation/flip counters that drive `summary()`.
 - **`CropEdit`** — a rectangle in **normalized** coordinates (fractions of the buffer, 0..1),
   so it is resolution-independent. `apply()` copies that region out of the oriented image.
+- **`AdjustEdit`** — light/tone: brightness, contrast, exposure, saturation, and black/white
+  level endpoints. Wraps `AdjustParams` and defers to `ImageAdjust::applyTone()`.
+- **`ColorEdit`** — colour balance: temperature, tint, per-channel red/green/blue gains, and
+  eight per-hue saturation bands (Red…Magenta, `ImageAdjust::hueBand()`). Wraps `ColorParams`
+  and defers to `ImageAdjust::applyColor()` (a cosine-falloff hue LUT scales each pixel's HSV
+  saturation). A *separate* manifest step from `AdjustEdit`, though the same pop-up
+  (`AdjustPanel`, the `C` key) drives both via its two tabs.
 - **`BwEdit`** — wraps `BwParams` and defers to `BwConverter::convert()`, making B&W conform
   to the interface.
 
-`EditManifest` keeps its edits in canonical pipeline order (orientation → crop → B&W) via
-`editOrderIndex()`; `ensureOrientation()/ensureCrop()/ensureBw()` insert at the right slot,
-and an edit is present **only while it is applied** (removed when it returns to identity /
-full / reset-to-colour). `render()` folds `apply()` over the edits in order — the path used
-to reconstruct an image from disk. `summary()` joins the per-edit summaries.
+`EditManifest` keeps its edits in canonical pipeline order (orientation → crop → adjust →
+color → B&W) via `editOrderIndex()`; the `ensure*()` accessors insert at the right slot, and
+an edit is present **only while it is applied** (removed when it returns to identity / full /
+neutral / reset-to-colour). `render()` folds `apply()` over the edits in order — the path used
+to reconstruct an image from disk. `renderAfterCrop()` applies only the post-crop edits
+(adjust → color → B&W) to an already-cropped base; this is the live display pipeline's hot
+path, since orientation and crop are cached as buffers. `summary()` joins the per-edit
+summaries.
 
 **Persistence:** `saveFor(path)` / `loadFor(path)` serialize the manifest to compact JSON
 stored in `QSettings`, keyed by a hash of the image's **absolute path** (under the
@@ -193,8 +204,8 @@ transform (like B&W) leaves `m_baseImage` alone.
   against the crop base. A 90°/270° rotation swaps width and height, so clamping against the
   stale bounds would clip the rotated selection.
 - After remapping, the `CropEdit`'s normalized rect is updated from the (clamped)
-  `viewer->cropRect()`, `rebuildBase()` runs, the manifest is persisted, and B&W re-runs (if
-  active) or `m_baseImage` is pushed via `setDisplayPixmap()`.
+  `viewer->cropRect()`, `rebuildBase()` runs, the manifest is persisted, and the post-crop
+  edits re-render (if any) or `m_baseImage` is pushed via `setDisplayPixmap()`.
 - `OrientationEdit::summary()` (`90° rotation`, `H flip`, `V flip`) feeds the metadata
   edit-state line.
 
@@ -233,27 +244,45 @@ mid-luminance colour reads as a mid grey rather than a too-dark raw-linear value
 loop is kept free of `pow`/`exp` by two per-image LUTs (linear→sRGB, and the full tonal
 curve, which is a pure function of the grey value).
 
-**Threading & state (`MainWindow`):**
-- B&W is "active" exactly when the manifest holds a `BwEdit` (`bwActive()`). Activating it
-  (`W`) records the panel's current look into the manifest; "Reset to Color" removes it.
-- The off-thread job is `BwEdit::apply()` (a value copy of the manifest's edit) run via
-  `QtConcurrent::run` + `QFutureWatcher` on `m_baseImage`; the UI never blocks.
-- `m_bwDebounce` (50 ms) coalesces slider drags; if a conversion is already running it
-  reschedules. Slider/look changes write straight into the manifest's `BwEdit` and persist.
-- `m_baseImage` is the source; `m_lastBwPixmap` is the latest result. The watcher only pushes
-  the result to the viewer when B&W is active, not comparing, and not mid-crop.
-- **Compare** (`\` or the panel button) toggles between `m_baseImage` (color) and
-  `m_lastBwPixmap`.
-- `deactivateBw()` removes the `BwEdit`, restores `m_baseImage`, clears the B&W caches, and
-  hides the panel. On image load, `onImageLoaded()` instead re-applies any saved `BwEdit`
-  (loading its look into the panel and re-running the conversion).
-
 **`BwPanel`** is a frameless translucent `Qt::Tool` widget docked bottom-left. Seven look
 buttons (exclusive `QButtonGroup`) sit above six hue-band sliders and a contrast slider,
 all −100…100. Picking a look calls `BwConverter::lookPreset()` to load its defaults (bands
 zeroed, the look's own contrast). It emits `paramsChanged` / `compareToggled` /
 `resetToColorRequested`. Like the color picker, it auto-hides after `PANEL_DISMISS` unless
 hovered or focused.
+
+## Adjustments & colour (`AdjustEdit`, `ColorEdit`, `AdjustPanel`)
+
+Two more edits adjust the colour image before any B&W conversion: `AdjustEdit` (light/tone:
+brightness, contrast, exposure, saturation, black/white levels) and `ColorEdit` (colour
+balance: temperature, tint, per-channel R/G/B, plus eight per-hue saturation bands). Both are
+pure pixel passes in `ImageAdjust::applyTone()` / `applyColor()` (normalized float maths over
+`Format_ARGB32`), neutral when every slider is 0 (the edit is then removed from the manifest).
+They live at pipeline positions adjust → color, between crop and B&W.
+
+**`AdjustPanel`** (the `C` key) is a frameless translucent `Qt::Tool` widget like `BwPanel`,
+but split into two tabs — **Light & Levels** and **Color** — backing the two edits. The Color
+tab carries the five balance sliders plus the eight hue-band sliders; each hue row shows a
+colour swatch and a groove whose tint tracks the slider's current value (`styleHueGroove()`).
+The active tab is persisted in `QSettings` (`adjustPanel/activeTab`), so the panel reopens on
+whichever tab was last shown. It emits `adjustParamsChanged` / `colorParamsChanged`; a per-tab
+**Reset** button zeroes the current tab.
+
+**The shared live-display pipeline (`MainWindow`):** adjust, color, and B&W all feed one
+render path off `m_baseImage`, so the panels never race each other on the display.
+- `hasDisplayEdits()` is true when the manifest holds any post-crop edit. `scheduleRender()`
+  shows `m_baseImage` directly when nothing applies (or while comparing), and otherwise arms
+  `m_renderDebounce` (50 ms, coalescing slider drags).
+- `applyRender()` runs `EditManifest::renderAfterCrop()` (a value copy of the whole manifest)
+  via `QtConcurrent::run` + `m_renderWatcher` on `m_baseImage`; the UI never blocks. The
+  watcher pushes `m_lastRenderPixmap` to the viewer only when display edits exist, not
+  comparing, and not mid-crop.
+- **Compare** (`\` or the B&W panel button) toggles `m_comparing` between `m_baseImage` (the
+  original colour) and `m_lastRenderPixmap`.
+- B&W is still "active" exactly when the manifest holds a `BwEdit` (`bwActive()`); `W` records
+  the panel's look, "Reset to Color" (`deactivateBw()`) removes it and re-renders whatever
+  adjust/color edits remain. On image load, `onImageLoaded()` loads any saved adjust/color/B&W
+  settings into the panels and schedules one render.
 
 ## Metadata overlay
 

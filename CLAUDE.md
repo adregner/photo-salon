@@ -2,7 +2,8 @@
 
 C++ / Qt6 desktop image viewer for in-person photography salons. Cross-platform:
 Linux, macOS (primary dev/test), and Windows 10/11. Single-window viewer with
-non-destructive edits (orientation, crop, hue-selective B&W) and a metadata overlay.
+non-destructive edits (orientation, crop, light/level & colour adjustments, hue-selective B&W)
+and a metadata overlay.
 
 ## Session start — do this first, every session
 
@@ -66,14 +67,15 @@ is in **`doc/ARCHITECTURE.md`**. The essentials:
 All modifications live in one ordered **`EditManifest`** owned by `MainWindow`. It is the
 single source of truth for *what* is applied and *in what order*. Each modification is an
 **`ImageEdit`** — a common interface (`apply(QImage)` on an in-memory buffer, plus JSON
-(de)serialization) implemented by `OrientationEdit`, `CropEdit`, and `BwEdit`. The manifest
+(de)serialization) implemented by `OrientationEdit`, `CropEdit`, `AdjustEdit`, `ColorEdit`,
+and `BwEdit`. The manifest
 is **persisted in `QSettings`, keyed by the image's absolute path**, so reopening the same
 file re-applies the same edits (`EditManifest::saveFor` / `loadFor`).
 
 ### Display pipeline & pixmap state
 
 Features that change the screen run in one ordered pipeline owned by `MainWindow`:
-**disk → orientation → crop → B&W → display**. The buffers are **`QImage`** (so edits run
+**disk → orientation → crop → adjust → color → B&W → display**. The buffers are **`QImage`** (so edits run
 off the GUI thread), each *derived from the manifest* applied to the previous stage:
 
 | Field | Meaning |
