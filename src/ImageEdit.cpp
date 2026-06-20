@@ -1,4 +1,5 @@
 #include "ImageEdit.h"
+#include <QJsonArray>
 #include <QJsonValue>
 #include <QStringList>
 #include <cmath>
@@ -206,6 +207,10 @@ QJsonObject ColorEdit::toJson() const {
     o["red"]         = m_params.red;
     o["green"]       = m_params.green;
     o["blue"]        = m_params.blue;
+    QJsonArray hues;
+    for (int v : m_params.hues)
+        hues.append(v);
+    o["hues"] = hues;
     return o;
 }
 
@@ -216,6 +221,9 @@ void ColorEdit::fromJson(const QJsonObject &obj) {
     m_params.red         = v("red");
     m_params.green       = v("green");
     m_params.blue        = v("blue");
+    const QJsonArray hues = obj.value(QLatin1String("hues")).toArray();
+    for (int i = 0; i < 8; ++i)
+        m_params.hues[i] = qBound(-100, hues.at(i).toInt(0), 100);
 }
 
 QString ColorEdit::summary() const {

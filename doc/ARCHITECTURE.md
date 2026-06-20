@@ -110,10 +110,11 @@ Five concrete edits implement it:
   so it is resolution-independent. `apply()` copies that region out of the oriented image.
 - **`AdjustEdit`** — light/tone: brightness, contrast, exposure, saturation, and black/white
   level endpoints. Wraps `AdjustParams` and defers to `ImageAdjust::applyTone()`.
-- **`ColorEdit`** — colour balance: temperature, tint, and per-channel red/green/blue gains.
-  Wraps `ColorParams` and defers to `ImageAdjust::applyColor()`. A *separate* manifest step
-  from `AdjustEdit`, though the same pop-up (`AdjustPanel`, the `C` key) drives both via its
-  two tabs.
+- **`ColorEdit`** — colour balance: temperature, tint, per-channel red/green/blue gains, and
+  eight per-hue saturation bands (Red…Magenta, `ImageAdjust::hueBand()`). Wraps `ColorParams`
+  and defers to `ImageAdjust::applyColor()` (a cosine-falloff hue LUT scales each pixel's HSV
+  saturation). A *separate* manifest step from `AdjustEdit`, though the same pop-up
+  (`AdjustPanel`, the `C` key) drives both via its two tabs.
 - **`BwEdit`** — wraps `BwParams` and defers to `BwConverter::convert()`, making B&W conform
   to the interface.
 
@@ -254,14 +255,16 @@ hovered or focused.
 
 Two more edits adjust the colour image before any B&W conversion: `AdjustEdit` (light/tone:
 brightness, contrast, exposure, saturation, black/white levels) and `ColorEdit` (colour
-balance: temperature, tint, per-channel R/G/B). Both are pure pixel passes in
-`ImageAdjust::applyTone()` / `applyColor()` (normalized float maths over `Format_ARGB32`),
-neutral when every slider is 0 (the edit is then removed from the manifest). They live at
-pipeline positions adjust → color, between crop and B&W.
+balance: temperature, tint, per-channel R/G/B, plus eight per-hue saturation bands). Both are
+pure pixel passes in `ImageAdjust::applyTone()` / `applyColor()` (normalized float maths over
+`Format_ARGB32`), neutral when every slider is 0 (the edit is then removed from the manifest).
+They live at pipeline positions adjust → color, between crop and B&W.
 
 **`AdjustPanel`** (the `C` key) is a frameless translucent `Qt::Tool` widget like `BwPanel`,
-but split into two tabs — **Light & Levels** and **Color** — backing the two edits. The
-active tab is persisted in `QSettings` (`adjustPanel/activeTab`), so the panel reopens on
+but split into two tabs — **Light & Levels** and **Color** — backing the two edits. The Color
+tab carries the five balance sliders plus the eight hue-band sliders; each hue row shows a
+colour swatch and a groove whose tint tracks the slider's current value (`styleHueGroove()`).
+The active tab is persisted in `QSettings` (`adjustPanel/activeTab`), so the panel reopens on
 whichever tab was last shown. It emits `adjustParamsChanged` / `colorParamsChanged`; a per-tab
 **Reset** button zeroes the current tab.
 

@@ -34,10 +34,13 @@ void AdjustPanelTest::params_roundTrip() {
     QCOMPARE(got.whites, 25);
 
     ColorParams c; c.temperature = -20; c.tint = 40; c.red = 5; c.green = -5; c.blue = 30;
+    c.hues[2] = 55; c.hues[6] = -35;
     panel.setColorParams(c);
     ColorParams gotC = panel.colorParams();
     QCOMPARE(gotC.temperature, -20);
     QCOMPARE(gotC.blue, 30);
+    QCOMPARE(gotC.hues[2], 55);
+    QCOMPARE(gotC.hues[6], -35);
 }
 
 void AdjustPanelTest::hasTwoTabs() {
@@ -87,7 +90,7 @@ void AdjustPanelTest::colorEdit_emitsColorSignal() {
     auto *tabs = panel.findChild<QTabWidget *>();
     QVERIFY(tabs);
     auto colorSliders = tabs->widget(1)->findChildren<QSlider *>();
-    QCOMPARE(colorSliders.size(), 5);
+    QCOMPARE(colorSliders.size(), 13);   // 5 balance + 8 hue bands
 
     QSignalSpy adjustSpy(&panel, &AdjustPanel::adjustParamsChanged);
     QSignalSpy colorSpy(&panel, &AdjustPanel::colorParamsChanged);
@@ -96,6 +99,11 @@ void AdjustPanelTest::colorEdit_emitsColorSignal() {
     QCOMPARE(colorSpy.count(), 1);
     QCOMPARE(adjustSpy.count(), 0);
     QCOMPARE(colorSpy.at(0).at(0).value<ColorParams>().temperature, -30);
+
+    // A hue-band slider (last row) emits the same signal and lands in hues[].
+    colorSliders.last()->setValue(70);
+    QCOMPARE(colorSpy.count(), 2);
+    QCOMPARE(colorSpy.at(1).at(0).value<ColorParams>().hues[7], 70);
 }
 
 int main(int argc, char *argv[]) {

@@ -28,9 +28,18 @@ struct ColorParams {
     int red         = 0;  // per-channel gain
     int green       = 0;
     int blue        = 0;
+    // Per-hue saturation, one entry per band in ImageAdjust::hueBand() order.
+    // Positive vivifies that family of colours, negative mutes it toward grey.
+    int hues[8]     = {0, 0, 0, 0, 0, 0, 0, 0};
 };
 
 namespace ImageAdjust {
+    // The eight hue bands the Color tab exposes — a name, the hue angle they are
+    // centred on (degrees, 0..360), and a vivid swatch colour for the UI.
+    struct HueBand { const char *name; double center; const char *swatch; };
+    int             hueBandCount();       // 8
+    const HueBand  &hueBand(int i);
+
     // Apply the tone/colour curve to a copy of src and return it. A neutral
     // parameter set returns src unchanged (and cheaply).
     QImage applyTone(const QImage &src, const AdjustParams &p);

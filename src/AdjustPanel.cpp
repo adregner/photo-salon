@@ -1,6 +1,9 @@
 #include "AdjustPanel.h"
 #include "Const.h"
+#include "ImageAdjust.h"
 #include <QApplication>
+#include <QColor>
+#include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -47,10 +50,8 @@ AdjustPanel::AdjustPanel(QWidget *parent)
     m_tabs = new QTabWidget(this);
     m_tabs->setStyleSheet(kTabStyle);
     m_tabs->setFocusPolicy(Qt::NoFocus);
-    m_tabs->addTab(buildSliderTab(m_tone, kToneNames, 6, &AdjustPanel::onToneChanged),
-                   QStringLiteral("Light && Levels"));
-    m_tabs->addTab(buildSliderTab(m_color, kColorNames, 5, &AdjustPanel::onColorChanged),
-                   QStringLiteral("Color"));
+    m_tabs->addTab(buildToneTab(),  QStringLiteral("Light && Levels"));
+    m_tabs->addTab(buildColorTab(), QStringLiteral("Color"));
     mainLayout->addWidget(m_tabs);
 
     // Bottom row: shortcut hint + per-tab reset.
@@ -84,16 +85,15 @@ AdjustPanel::AdjustPanel(QWidget *parent)
     });
 }
 
-QWidget *AdjustPanel::buildSliderTab(Row *rows, const char *const *names, int count,
-                                     void (AdjustPanel::*onChanged)()) {
+QWidget *AdjustPanel::buildToneTab() {
     auto *tab = new QWidget(this);
     auto *grid = new QGridLayout(tab);
     grid->setContentsMargins(6, 10, 6, 6);
     grid->setHorizontalSpacing(10);
     grid->setVerticalSpacing(8);
 
-    for (int i = 0; i < count; ++i) {
-        auto *name = new QLabel(QLatin1String(names[i]), tab);
+    for (int i = 0; i < 6; ++i) {
+        auto *name = new QLabel(QLatin1String(kToneNames[i]), tab);
         name->setFixedWidth(86);
         name->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         name->setStyleSheet("color: white; font-size: 13px;");
@@ -106,7 +106,7 @@ QWidget *AdjustPanel::buildSliderTab(Row *rows, const char *const *names, int co
         slider->setPageStep(10);
         slider->setMinimumWidth(360);
         grid->addWidget(slider, i, 1);
-        connect(slider, &QSlider::valueChanged, this, onChanged);
+        connect(slider, &QSlider::valueChanged, this, &AdjustPanel::onToneChanged);
 
         auto *value = new QLabel(QStringLiteral(" +0"), tab);
         value->setFixedWidth(38);
@@ -114,9 +114,80 @@ QWidget *AdjustPanel::buildSliderTab(Row *rows, const char *const *names, int co
         value->setStyleSheet("color: white; font-size: 13px; font-family: monospace;");
         grid->addWidget(value, i, 2);
 
-        rows[i] = {slider, value};
+        m_tone[i] = {slider, value};
     }
     return tab;
+}
+
+QWidget *AdjustPanel::buildColorTab() {
+    auto *tab = new QWidget(this);
+    auto *grid = new QGridLayout(tab);
+    grid->setContentsMargins(6, 10, 6, 6);
+    grid->setHorizontalSpacing(8);
+    grid->setVerticalSpacing(6);
+
+    // A row is [swatch?][name][slider][value]; only the per-hue rows get a swatch.
+    auto addRow = [&](int row, const QString &name, const QString &swatchHex) -> Row {
+        if (!swatchHex.isEmpty()) {
+            auto *sw = new QLabel(tab);
+            sw->setFixedSize(14, 14);
+            sw->setStyleSheet(QString("background:%1; border:1px solid #888; border-radius:7px;").arg(swatchHex));
+            grid->addWidget(sw, row, 0, Qt::AlignCenter);
+        }
+        auto *lbl = new QLabel(name, tab);
+        lbl->setFixedWidth(78);
+        lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        lbl->setStyleSheet("color: white; font-size: 13px;");
+        grid->addWidget(lbl, row, 1);
+
+        auto *slider = new QSlider(Qt::Horizontal, tab);
+        slider->setRange(-100, 100);
+        slider->setValue(0);
+        slider->setSingleStep(1);
+        slider->setPageStep(10);
+        slider->setMinimumWidth(330);
+        grid->addWidget(slider, row, 2);
+        connect(slider, &QSlider::valueChanged, this, &AdjustPanel::onColorChanged);
+
+        auto *value = new QLabel(QStringLiteral(" +0"), tab);
+        value->setFixedWidth(38);
+        value->setAlignment(Qt::AlignCenter);
+        value->setStyleSheet("color: white; font-size: 13px; font-family: monospace;");
+        grid->addWidget(value, row, 3);
+
+        return Row{slider, value};
+    };
+
+    // The five colour-balance sliders (no swatch).
+    for (int i = 0; i < 5; ++i)
+        m_color[i] = addRow(i, QLatin1String(kColorNames[i]), QString());
+
+    auto *sep = new QFrame(tab);
+    sep->setFrameShape(QFrame::HLine);
+    sep->setFrameShadow(QFrame::Sunken);
+    grid->addWidget(sep, 5, 0, 1, 4);
+
+    // The eight per-hue saturation sliders: swatch + a value-tinted groove.
+    for (int b = 0; b < 8; ++b) {
+        const auto &hb = ImageAdjust::hueBand(b);
+        m_color[kHueOffset + b] = addRow(6 + b, QLatin1String(hb.name), QLatin1String(hb.swatch));
+        styleHueGroove(b);
+    }
+    return tab;
+}
+
+void AdjustPanel::styleHueGroove(int hueIndex) {
+    QSlider *s = m_color[kHueOffset + hueIndex].slider;
+    const double center = ImageAdjust::hueBand(hueIndex).center;
+    // Map the slider value onto the groove's vividness: −100 → grey, +100 → the
+    // band's full hue, so the line itself reflects the current value.
+    const double sat = (s->value() + 100) / 200.0;
+    const QColor groove = QColor::fromHslF(center / 360.0, sat, 0.5);
+    s->setStyleSheet(QString(
+        "QSlider::groove:horizontal { height:6px; border-radius:3px; background:%1; }"
+        "QSlider::handle:horizontal { background:#f0f0f0; border:1px solid #555;"
+        " width:12px; height:12px; margin:-4px 0; border-radius:6px; }")
+        .arg(groove.name()));
 }
 
 AdjustParams AdjustPanel::adjustParams() const {
@@ -137,6 +208,8 @@ ColorParams AdjustPanel::colorParams() const {
     p.red         = m_color[2].slider->value();
     p.green       = m_color[3].slider->value();
     p.blue        = m_color[4].slider->value();
+    for (int b = 0; b < 8; ++b)
+        p.hues[b] = m_color[kHueOffset + b].slider->value();
     return p;
 }
 
@@ -158,8 +231,14 @@ void AdjustPanel::setColorParams(const ColorParams &p) {
         QSignalBlocker block(m_color[i].slider);
         m_color[i].slider->setValue(vals[i]);
     }
+    for (int b = 0; b < 8; ++b) {
+        QSignalBlocker block(m_color[kHueOffset + b].slider);
+        m_color[kHueOffset + b].slider->setValue(p.hues[b]);
+    }
     m_inhibitSignal = false;
     updateValueLabels();
+    for (int b = 0; b < 8; ++b)
+        styleHueGroove(b);
 }
 
 int  AdjustPanel::activeTab() const         { return m_tabs->currentIndex(); }
@@ -172,6 +251,8 @@ void AdjustPanel::onToneChanged() {
 
 void AdjustPanel::onColorChanged() {
     updateValueLabels();
+    for (int b = 0; b < 8; ++b)
+        styleHueGroove(b);
     if (!m_inhibitSignal) emit colorParamsChanged(colorParams());
 }
 

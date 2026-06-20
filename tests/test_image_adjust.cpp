@@ -18,6 +18,8 @@ private slots:
     void saturation_zeroGrays();
     void temperature_warmsTowardRed();
     void channelGain_boostsThatChannel();
+    void hueBand_boostsMatchingHueSaturation();
+    void hueBand_leavesOtherHuesAndNeutralsAlone();
     void edits_jsonRoundTrip();
     void manifest_keepsAdjustColorBetweenCropAndBw();
     void manifest_renderAfterCropSkipsOrientationAndCrop();
@@ -80,6 +82,40 @@ void ImageAdjustTest::channelGain_boostsThatChannel() {
     QCOMPARE(out.blue(), 100);
 }
 
+// Pushing the Blue band's slider up must deepen the saturation of a blue pixel.
+void ImageAdjustTest::hueBand_boostsMatchingHueSaturation() {
+    // Find which band index is "Blue" (≈225°) so the test is independent of order.
+    int blueIdx = -1;
+    for (int i = 0; i < ImageAdjust::hueBandCount(); ++i)
+        if (QString(ImageAdjust::hueBand(i).name) == "Blue") blueIdx = i;
+    QVERIFY(blueIdx >= 0);
+
+    QImage src = solid(4, 4, QColor(120, 140, 210));   // a muted blue
+    ColorParams p;
+    p.hues[blueIdx] = 100;                              // vivify blues
+    QColor in  = src.pixelColor(1, 1);
+    QColor out = ImageAdjust::applyColor(src, p).pixelColor(1, 1);
+    QVERIFY(out.saturation() > in.saturation());        // HSV saturation rises
+    QCOMPARE(out.hue(), in.hue());                      // hue is preserved
+}
+
+// A red-band boost leaves a green pixel and a grey pixel untouched.
+void ImageAdjustTest::hueBand_leavesOtherHuesAndNeutralsAlone() {
+    int redIdx = -1;
+    for (int i = 0; i < ImageAdjust::hueBandCount(); ++i)
+        if (QString(ImageAdjust::hueBand(i).name) == "Red") redIdx = i;
+    QVERIFY(redIdx >= 0);
+
+    ColorParams p;
+    p.hues[redIdx] = 100;
+
+    QImage green = solid(4, 4, QColor(40, 200, 60));
+    QCOMPARE(ImageAdjust::applyColor(green, p).pixelColor(1, 1), green.pixelColor(1, 1));
+
+    QImage grey = solid(4, 4, QColor(128, 128, 128));   // no hue → nothing to adjust
+    QCOMPARE(ImageAdjust::applyColor(grey, p).pixelColor(1, 1), grey.pixelColor(1, 1));
+}
+
 void ImageAdjustTest::edits_jsonRoundTrip() {
     AdjustEdit a;
     AdjustParams ap; ap.brightness = 10; ap.contrast = -20; ap.exposure = 5;
@@ -94,6 +130,7 @@ void ImageAdjustTest::edits_jsonRoundTrip() {
 
     ColorEdit c;
     ColorParams cp; cp.temperature = -25; cp.tint = 15; cp.red = 8; cp.green = -8; cp.blue = 20;
+    cp.hues[0] = 60; cp.hues[3] = -40; cp.hues[7] = 25;
     c.setParams(cp);
 
     ColorEdit rc;

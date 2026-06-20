@@ -46,17 +46,20 @@ private:
         QLabel  *value  = nullptr;
     };
 
-    QWidget *buildSliderTab(Row *rows, const char *const *names, int count,
-                            void (AdjustPanel::*onChanged)());
+    QWidget *buildToneTab();
+    QWidget *buildColorTab();
     void onToneChanged();
     void onColorChanged();
     void resetCurrentTab();
     void updateValueLabels();
+    void styleHueGroove(int hueIndex);   // tint a hue slider's line by its value
     void updateDismissTimer();
 
+    static constexpr int kHueOffset = 5;   // m_color[5..12] are the hue sliders
+
     QTabWidget  *m_tabs   = nullptr;
-    Row          m_tone[6];   // brightness, contrast, exposure, saturation, blacks, whites
-    Row          m_color[5];  // temperature, tint, red, green, blue
+    Row          m_tone[6];    // brightness, contrast, exposure, saturation, blacks, whites
+    Row          m_color[13];  // temperature, tint, red, green, blue, then 8 hue bands
     QPushButton *m_resetBtn = nullptr;
     QTimer      *m_dismissTimer = nullptr;
     bool         m_mouseOver = false;
