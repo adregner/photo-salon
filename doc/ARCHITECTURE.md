@@ -8,10 +8,12 @@ this file has the detail. All source lives in `src/`.
 | Class / file | Base | Responsibility |
 |---|---|---|
 | `main.cpp` | — | Entry point. Parses `argv[1]`, resolves it to an image path (or shows the open dialog), constructs `MainWindow`. No business logic. |
-| `MainWindow` | `QMainWindow` | Orchestrator. Owns the viewer, every overlay/panel, and the **`EditManifest`** (the canonical edit state). Wires `ImageViewer` signals to handlers. Runs the display pipeline. |
-| `EditManifest` | value type | The single, ordered, canonical record of every edit applied to the current image. Typed accessors, `render()`, JSON (de)serialization, and per-path persistence in `QSettings`. |
+| `MainWindow` | `QMainWindow` | Orchestrator. Owns the image pane(s), every shared overlay/panel, and the compare tab bar. Wires each pane's `ImageViewer` signals to handlers, always acting on the **focused** pane. |
+| `ImagePane` | `QObject` | All per-image state: one `ImageViewer`, that image's **`EditManifest`**, the derived `QImage` buffers, and the off-thread display-render pipeline. One pane in single mode; two independent panes in side-by-side compare mode. |
+| `CompareTabBar` | `QWidget` | The minimal tab strip shown atop the window in compare mode: one tab per image (file name + `✕`), focused tab lighter. Emits `tabSelected` / `tabClosed`. Hidden when only one image is open. |
+| `EditManifest` | value type | The single, ordered, canonical record of every edit applied to one image. Typed accessors, `render()`, JSON (de)serialization, and per-path persistence in `QSettings`. |
 | `ImageEdit` | interface | Common interface every editing module implements: `apply(QImage)` on an in-memory buffer, JSON (de)serialization, `clone()`, and a `summary()` tag. Concrete: `OrientationEdit`, `CropEdit`, `BwEdit`. |
-| `ImageViewer` | `QGraphicsView` | Display + input. Owns the `QGraphicsScene` and the single `QGraphicsPixmapItem`. Handles zoom/pan/fit, folder navigation, the crop UI, and emits *intent* signals for everything it does not own. |
+| `ImageViewer` | `QGraphicsView` | Display + input. Owns the `QGraphicsScene` and the single `QGraphicsPixmapItem`. Handles zoom/pan/fit, folder navigation, the crop UI, exposes relative zoom/pan for sync, and emits *intent* signals for everything it does not own. |
 | `HelpOverlay` | `QWidget` | Mouse-transparent overlay painting the keyboard-shortcut list. Font auto-scales to fit. |
 | `ExifOverlay` | `QWidget` | Template-driven metadata overlay. Reverse-geocodes GPS via Nominatim. Shows live edit state. |
 | `ExifReader` | namespace | Reads file info + EXIF (via `easyexif`) into a `QMap<QString,QString>` of preformatted strings. |
@@ -77,6 +79,7 @@ sinks (viewport, scene, child widgets) that would otherwise swallow keys.
 | `H` / `V` | Flip horizontal / vertical | → `flipHorizontalRequested` / `flipVerticalRequested` |
 | `S` | Save current displayed image | → `saveRequested` |
 | `O` | Open file (native dialog) | → `openFileRequested` |
+| `Shift+O` | Open a second image to compare side by side | → `compareOpenRequested` (`openSecondImage`) |
 | `Tab` | Open another file from the current folder | → `folderBrowseRequested` (list dialog) |
 | `Q` | Quit — press twice within `EXIT_DEBOUNCE` | → `exitRequested` |
 | `?` | Toggle this help overlay | `helpVisibilityChanged` |
@@ -86,10 +89,11 @@ sinks (viewport, scene, child widgets) that would otherwise swallow keys.
 
 ## The edit manifest (canonical edit state)
 
-Every modification is recorded in one **`EditManifest`** owned by `MainWindow` — the single
-source of truth for *what* edits are applied and *in what order*. The display is produced by
-applying the manifest to the disk image; the scattered transform flags of earlier designs
-(`m_rotationAngle`, `m_flippedH/V`, `m_cropApplied`, `m_bwActive`, …) no longer exist.
+Every modification is recorded in one **`EditManifest`** owned by the image's `ImagePane` —
+the single source of truth for *what* edits are applied and *in what order*. The display is
+produced by applying the manifest to the disk image; the scattered transform flags of earlier
+designs (`m_rotationAngle`, `m_flippedH/V`, `m_cropApplied`, `m_bwActive`, …) no longer exist.
+(In compare mode each pane has its own manifest, so edits never cross between images.)
 
 **`ImageEdit`** is the common interface every editing module implements:
 
@@ -129,18 +133,18 @@ summaries.
 
 **Persistence:** `saveFor(path)` / `loadFor(path)` serialize the manifest to compact JSON
 stored in `QSettings`, keyed by a hash of the image's **absolute path** (under the
-`manifests/` group). Saving an empty manifest clears the entry. `MainWindow` calls
-`persistManifest()` after every edit, and `onImageLoaded()` loads and re-applies the saved
-manifest whenever an image is opened — so edits are remembered per file across sessions.
+`manifests/` group). Saving an empty manifest clears the entry. The pane calls
+`persistManifest()` after every edit, and `ImagePane::reloadFromDisk()` loads and re-applies
+the saved manifest whenever an image is opened — so edits are remembered per file across sessions.
 
 ## The display pipeline
 
 Every feature that changes what's on screen participates in one ordered pipeline owned
-by `MainWindow`. Order:
+by each `ImagePane`. Order:
 
 1. **Disk image** — `ImageViewer::loadImage()` reads the file with
    `QImageReader::setAutoTransform(true)` (EXIF orientation is baked in at load). On the
-   `imagePathChanged` signal `MainWindow::onImageLoaded()` captures it into `m_diskImage`,
+   `imagePathChanged` signal `ImagePane::reloadFromDisk()` captures it into `m_diskImage`,
    loads that path's saved manifest, and re-derives the buffers below.
 2. **Orientation** — `R`/`H`/`V` → `applyOrientationStep()` composes a step onto the
    manifest's `OrientationEdit`.
@@ -150,9 +154,9 @@ by `MainWindow`. Order:
 5. **Display** — `ImageViewer::setDisplayPixmap()` swaps the item's pixmap and refreshes
    the scene rect if dimensions changed (e.g. after a 90° rotation).
 
-### Buffer state model (three `QImage` fields in `MainWindow`)
+### Buffer state model (three `QImage` fields in `ImagePane`)
 
-Each buffer is *derived* from the manifest applied to the previous stage — `MainWindow` does
+Each buffer is *derived* from the manifest applied to the previous stage — `ImagePane` does
 not store transform state independently of the manifest. `rebuildOriented()` and
 `rebuildBase()` recompute them via the edit interface.
 
@@ -167,6 +171,37 @@ settings in the `EditManifest`, read input from `m_baseImage`, and write output 
 `setDisplayPixmap()`. Mutate the manifest, re-derive the buffers, and call
 `persistManifest()` — that is the only way an edit is applied. A non-destructive view
 transform (like B&W) leaves `m_baseImage` alone.
+
+## Side-by-side compare (`ImagePane`, `CompareTabBar`)
+
+All of the per-image state above (the viewer, the manifest, the three buffers, and the
+off-thread render watcher/debounce) lives in **`ImagePane`**, not `MainWindow`. `MainWindow`
+keeps a `QList<ImagePane*>` and a `m_focus` index, plus the *shared* overlays/panels
+(help, EXIF, background picker, adjust, B&W) which always act on `focused()`.
+
+- **Layout** — the central widget is a container with a vertical layout: a `CompareTabBar`
+  above a horizontal row of pane viewers. Single mode hides the strip and holds one viewer;
+  compare mode shows two tabs over two viewers (equal stretch).
+- **Entering** — `Shift+O` (`compareOpenRequested` → `openSecondImage`) shows the open
+  dialog, then `openComparison(path)` builds a second `ImagePane`, adds its viewer, shows the
+  tab bar, and focuses the new image. Both images start fit to their half (the late-added
+  viewer is fit once via a deferred `ImageViewer::fitToWindow()`, since its real size is only
+  known after layout).
+- **Focus** — exactly one pane is focused; its tab is drawn lighter (`CompareTabBar::
+  setFocusedIndex`). Clicking a tab (`tabSelected`) or clicking/scrolling a viewer
+  (`ImageViewer::focusRequested`) calls `setFocusIndex()`, which restyles the tab, resyncs
+  the shared panels to that pane's manifest, and gives the viewer keyboard focus. The
+  app-wide key filter forwards every shortcut to `activeViewer()`, so even keys arriving at
+  the *other* viewer act on the focused image.
+- **Closing** — a tab's `✕` (`tabClosed` → `closePane`) deletes that pane's viewer (the pane
+  is its `QObject` child, so it goes too), leaving the survivor as the sole, focused image and
+  hiding the strip.
+- **View sync** — `ImageViewer` exposes `relativeZoom()` (scale ÷ `fitScale()`) and
+  `relativeCenter()` (viewport centre as a 0..1 fraction of the image), plus
+  `applyRelativeView()` to set them. Any zoom or pan emits `viewChanged`; `MainWindow::
+  syncViewFrom()` mirrors the **focused** viewer's relative view onto the other (guarded by
+  `m_syncingViews`, and one-directional so the mirror target never echoes back). This makes
+  zoom relative to "fit" and pan relative to pixels, so differently-sized images stay matched.
 
 ## Crop tool (in `ImageViewer`)
 
@@ -268,8 +303,9 @@ The active tab is persisted in `QSettings` (`adjustPanel/activeTab`), so the pan
 whichever tab was last shown. It emits `adjustParamsChanged` / `colorParamsChanged`; a per-tab
 **Reset** button zeroes the current tab.
 
-**The shared live-display pipeline (`MainWindow`):** adjust, color, and B&W all feed one
-render path off `m_baseImage`, so the panels never race each other on the display.
+**The per-image live-display pipeline (`ImagePane`):** adjust, color, and B&W all feed one
+render path off `m_baseImage`, so the panels never race each other on the display. Each pane
+owns its own debounce + render watcher, so two compared images render independently.
 - `hasDisplayEdits()` is true when the manifest holds any post-crop edit. `scheduleRender()`
   shows `m_baseImage` directly when nothing applies (or while comparing), and otherwise arms
   `m_renderDebounce` (50 ms, coalescing slider drags).
@@ -281,8 +317,9 @@ render path off `m_baseImage`, so the panels never race each other on the displa
   original colour) and `m_lastRenderPixmap`.
 - B&W is still "active" exactly when the manifest holds a `BwEdit` (`bwActive()`); `W` records
   the panel's look, "Reset to Color" (`deactivateBw()`) removes it and re-renders whatever
-  adjust/color edits remain. On image load, `onImageLoaded()` loads any saved adjust/color/B&W
-  settings into the panels and schedules one render.
+  adjust/color edits remain. On image load, the pane re-applies any saved adjust/color/B&W
+  settings and schedules one render; `MainWindow` reflects the focused pane's state into the
+  shared panels (`syncPanelsToFocused()`).
 
 ## Metadata overlay
 

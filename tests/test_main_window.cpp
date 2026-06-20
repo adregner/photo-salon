@@ -34,7 +34,7 @@ private slots:
 
 private:
     ImageViewer *viewerOf(MainWindow &w) {
-        return qobject_cast<ImageViewer *>(w.centralWidget());
+        return w.activeViewer();
     }
     QString m_imagePath;
     QTemporaryFile *m_tmpFile = nullptr;

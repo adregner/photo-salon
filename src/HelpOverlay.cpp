@@ -64,6 +64,7 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "  →    Next image in folder\n"
         "  ←    Previous image in folder\n"
         "  O    Open file\n"
+        "  Shift+O  Open a second image (compare side by side)\n"
         "  Tab  Open file from current folder\n"
         "\n"
         "  Escape   Dismiss fullscreen / current panel\n"

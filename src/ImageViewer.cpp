@@ -14,9 +14,11 @@
 #include <QPainter>
 #include <QPen>
 #include <QResizeEvent>
+#include <QScrollBar>
 #include <QShowEvent>
 #include <QTimer>
 #include <QWheelEvent>
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -48,6 +50,11 @@ ImageViewer::ImageViewer(const QString &imagePath, QWidget *parent)
     // forwarded to keyPressEvent via the normal QAbstractScrollArea path; handle them
     // here before the focus machinery sees the event.
     viewport()->installEventFilter(this);
+
+    // ScrollHandDrag pans by moving the (hidden) scrollbars; mirror those into a
+    // viewChanged() so side-by-side mode can keep the two images in sync.
+    connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [this] { emitViewChanged(); });
+    connect(verticalScrollBar(),   &QScrollBar::valueChanged, this, [this] { emitViewChanged(); });
 
     m_cropNoticeTimer = new QTimer(this);
     m_cropNoticeTimer->setSingleShot(true);
@@ -99,6 +106,11 @@ QPixmap ImageViewer::currentDisplayPixmap() const {
     return m_pixmapItem ? m_pixmapItem->pixmap() : QPixmap{};
 }
 
+void ImageViewer::fitToWindow() {
+    m_fitted = true;
+    fitImage();
+}
+
 void ImageViewer::navigate(int delta) {
     if (m_imagePath.isEmpty()) return;
     QFileInfo info(m_imagePath);
@@ -125,6 +137,7 @@ void ImageViewer::resizeEvent(QResizeEvent *event) {
 void ImageViewer::wheelEvent(QWheelEvent *event) {
     const int delta = event->angleDelta().y();
     if (delta == 0) { event->ignore(); return; }
+    emit focusRequested();   // interacting with a pane focuses it (side-by-side)
     applyZoom(std::pow(1.15, delta / 120.0));
     event->accept();
 }
@@ -212,7 +225,10 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         event->accept();
         break;
     case Qt::Key_O:
-        emit openFileRequested();
+        if (event->modifiers() & Qt::ShiftModifier)
+            emit compareOpenRequested();
+        else
+            emit openFileRequested();
         event->accept();
         break;
     case Qt::Key_I:
@@ -244,6 +260,49 @@ void ImageViewer::applyZoom(double factor) {
     if (newScale < 0.05 || newScale > 32.0) return;
     scale(factor, factor);
     m_fitted = false;
+    emitViewChanged();
+}
+
+double ImageViewer::fitScale() const {
+    const QRectF sr = m_scene->sceneRect();
+    const QSize vp = viewport()->size();
+    if (sr.width() <= 0 || sr.height() <= 0 || vp.isEmpty())
+        return 1.0;
+    return std::min(vp.width() / sr.width(), vp.height() / sr.height());
+}
+
+double ImageViewer::relativeZoom() const {
+    const double fit = fitScale();
+    return fit > 0 ? transform().m11() / fit : 1.0;
+}
+
+QPointF ImageViewer::relativeCenter() const {
+    const QRectF sr = m_scene->sceneRect();
+    if (sr.width() <= 0 || sr.height() <= 0)
+        return QPointF(0.5, 0.5);
+    const QPointF c = mapToScene(viewport()->rect().center());
+    return QPointF((c.x() - sr.left()) / sr.width(),
+                   (c.y() - sr.top())  / sr.height());
+}
+
+void ImageViewer::applyRelativeView(double relZoom, const QPointF &relCenter) {
+    const QRectF sr = m_scene->sceneRect();
+    if (sr.width() <= 0 || sr.height() <= 0)
+        return;
+    m_suppressViewChanged = true;
+    const double target = relZoom * fitScale();
+    QTransform t;
+    t.scale(target, target);
+    setTransform(t);
+    centerOn(sr.left() + relCenter.x() * sr.width(),
+             sr.top()  + relCenter.y() * sr.height());
+    m_fitted = false;
+    m_suppressViewChanged = false;
+}
+
+void ImageViewer::emitViewChanged() {
+    if (!m_suppressViewChanged)
+        emit viewChanged();
 }
 
 void ImageViewer::setHelpVisible(bool visible) {
@@ -407,6 +466,7 @@ void ImageViewer::updateCropCursor(const QPoint &viewportPos) {
 }
 
 void ImageViewer::mousePressEvent(QMouseEvent *event) {
+    emit focusRequested();   // interacting with a pane focuses it (side-by-side)
     if (!m_cropMode) { QGraphicsView::mousePressEvent(event); return; }
     if (event->button() == Qt::LeftButton) {
         m_activeHandle = hitTestHandle(event->pos());
@@ -567,6 +627,8 @@ void ImageViewer::setBackgroundGrey(int value) {
 }
 
 void ImageViewer::fitImage() {
-    if (!m_scene->items().isEmpty())
+    if (!m_scene->items().isEmpty()) {
         fitInView(m_scene->sceneRect(), Qt::KeepAspectRatio);
+        emitViewChanged();
+    }
 }
