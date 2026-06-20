@@ -72,7 +72,7 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "\n"
         "Mouse Controls\n"
         "\n"
-        "  Double Click    Reset crop (in crop-mode)\n"
+        "  Double Click    Reset crop (in crop-mode) / reset an adjustment slider\n"
         "  Scroll wheel    Zoom (anchored to cursor)");
 
     // Left-align at 1/3 width so monospace columns stay intact; center vertically

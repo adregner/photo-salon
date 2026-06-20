@@ -79,19 +79,22 @@ QImage ImageAdjust::applyTone(const QImage &src, const AdjustParams &p) {
 
     // Precompute the per-channel curve coefficients once.
     const double exposure = std::pow(2.0, p.exposure / 100.0);   // ±1 stop at ±100
-    const double inBlack  = p.blacks / 100.0 * 0.5;              // levels black point
-    double       inWhite  = 1.0 - p.whites / 100.0 * 0.5;        // levels white point
-    double       span     = inWhite - inBlack;
-    if (span < 1e-3) span = 1e-3;                               // guard divide-by-zero
+    double       inWhite  = 1.0 - p.whites / 100.0 * 0.5;        // white point (up = brighter)
+    if (inWhite < 0.05) inWhite = 0.05;                          // guard divide-by-zero
+    const double blacks   = p.blacks / 100.0 * 0.5;             // up = lighter, down = darker
     const double bright   = p.brightness / 100.0 * 0.5;          // additive
     const double contrast = 1.0 + p.contrast / 100.0;            // 0..2 around mid-grey
     const double sat      = 1.0 + p.saturation / 100.0;          // 0..2 around luma
 
     auto tone = [&](double v) {
         v *= exposure;
-        v = (v - inBlack) / span;             // black/white level remap
+        v = v / inWhite;                          // white level (up brightens highlights)
+        if (blacks > 0.0)
+            v = blacks + v * (1.0 - blacks);      // lift the black floor → lighter blacks
+        else if (blacks < 0.0)
+            v = (v + blacks) / (1.0 + blacks);    // raise the input black point → darker
         v += bright;
-        v = (v - 0.5) * contrast + 0.5;       // contrast around mid-grey
+        v = (v - 0.5) * contrast + 0.5;           // contrast around mid-grey
         return v;
     };
 

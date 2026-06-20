@@ -21,6 +21,7 @@ private slots:
     void remembersActiveTab_acrossHideShow();
     void toneEdit_emitsAdjustSignal();
     void colorEdit_emitsColorSignal();
+    void doubleClick_resetsSliderToZero();
 };
 
 void AdjustPanelTest::params_roundTrip() {
@@ -104,6 +105,24 @@ void AdjustPanelTest::colorEdit_emitsColorSignal() {
     colorSliders.last()->setValue(70);
     QCOMPARE(colorSpy.count(), 2);
     QCOMPARE(colorSpy.at(1).at(0).value<ColorParams>().hues[7], 70);
+}
+
+// Double-clicking any adjustment slider snaps it back to its default of 0.
+void AdjustPanelTest::doubleClick_resetsSliderToZero() {
+    AdjustPanel panel;
+    auto *tabs = panel.findChild<QTabWidget *>();
+    QVERIFY(tabs);
+    auto *slider = tabs->widget(0)->findChildren<QSlider *>().first();   // brightness
+
+    slider->setValue(60);
+    QCOMPARE(slider->value(), 60);
+
+    QSignalSpy spy(&panel, &AdjustPanel::adjustParamsChanged);
+    QTest::mouseDClick(slider, Qt::LeftButton, Qt::NoModifier,
+                       slider->rect().center());
+    QCOMPARE(slider->value(), 0);
+    QVERIFY(spy.count() >= 1);
+    QCOMPARE(spy.last().at(0).value<AdjustParams>().brightness, 0);
 }
 
 int main(int argc, char *argv[]) {

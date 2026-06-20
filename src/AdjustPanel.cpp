@@ -7,6 +7,7 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QSettings>
@@ -18,6 +19,22 @@
 namespace {
 const char *kToneNames[6]  = {"Brightness", "Contrast", "Exposure", "Saturation", "Blacks", "Whites"};
 const char *kColorNames[5] = {"Temperature", "Tint", "Red", "Green", "Blue"};
+
+// A slider that snaps back to its default (0) on a double-click, so any
+// adjustment can be reset without dragging it precisely to centre.
+class ResetSlider : public QSlider {
+public:
+    explicit ResetSlider(Qt::Orientation o, QWidget *parent = nullptr) : QSlider(o, parent) {}
+protected:
+    void mouseDoubleClickEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton) {
+            setValue(0);
+            event->accept();
+        } else {
+            QSlider::mouseDoubleClickEvent(event);
+        }
+    }
+};
 
 const char *kBtnStyle =
     "QPushButton { color: white; background: #444; border: 1px solid #666;"
@@ -99,7 +116,7 @@ QWidget *AdjustPanel::buildToneTab() {
         name->setStyleSheet("color: white; font-size: 13px;");
         grid->addWidget(name, i, 0);
 
-        auto *slider = new QSlider(Qt::Horizontal, tab);
+        auto *slider = new ResetSlider(Qt::Horizontal, tab);
         slider->setRange(-100, 100);
         slider->setValue(0);
         slider->setSingleStep(1);
@@ -140,7 +157,7 @@ QWidget *AdjustPanel::buildColorTab() {
         lbl->setStyleSheet("color: white; font-size: 13px;");
         grid->addWidget(lbl, row, 1);
 
-        auto *slider = new QSlider(Qt::Horizontal, tab);
+        auto *slider = new ResetSlider(Qt::Horizontal, tab);
         slider->setRange(-100, 100);
         slider->setValue(0);
         slider->setSingleStep(1);

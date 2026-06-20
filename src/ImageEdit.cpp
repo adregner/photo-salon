@@ -189,7 +189,20 @@ void AdjustEdit::fromJson(const QJsonObject &obj) {
 }
 
 QString AdjustEdit::summary() const {
-    return ImageAdjust::isNeutral(m_params) ? QString() : QStringLiteral("adjustments");
+    if (ImageAdjust::isNeutral(m_params)) return QString();
+    QStringList parts;
+    auto add = [&](const char *label, int v) {
+        if (v != 0) parts << QStringLiteral("%1 %2%3").arg(QLatin1String(label),
+                                                           v > 0 ? QStringLiteral("+") : QString(),
+                                                           QString::number(v));
+    };
+    add("brightness", m_params.brightness);
+    add("contrast",   m_params.contrast);
+    add("exposure",   m_params.exposure);
+    add("saturation", m_params.saturation);
+    add("blacks",     m_params.blacks);
+    add("whites",     m_params.whites);
+    return parts.join(QStringLiteral(", "));
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +240,23 @@ void ColorEdit::fromJson(const QJsonObject &obj) {
 }
 
 QString ColorEdit::summary() const {
-    return ImageAdjust::isNeutral(m_params) ? QString() : QStringLiteral("color");
+    if (ImageAdjust::isNeutral(m_params)) return QString();
+    QStringList parts;
+    auto add = [&](const QString &label, int v) {
+        if (v != 0) parts << QStringLiteral("%1 %2%3").arg(label,
+                                                           v > 0 ? QStringLiteral("+") : QString(),
+                                                           QString::number(v));
+    };
+    add(QStringLiteral("temp"),  m_params.temperature);
+    add(QStringLiteral("tint"),  m_params.tint);
+    add(QStringLiteral("red"),   m_params.red);
+    add(QStringLiteral("green"), m_params.green);
+    add(QStringLiteral("blue"),  m_params.blue);
+    // Per-hue saturation bands, named and suffixed so they don't read like the
+    // red/green/blue channel gains above.
+    for (int i = 0; i < 8; ++i)
+        add(QString::fromLatin1(ImageAdjust::hueBand(i).name) + QStringLiteral(" sat"), m_params.hues[i]);
+    return parts.join(QStringLiteral(", "));
 }
 
 // ---------------------------------------------------------------------------

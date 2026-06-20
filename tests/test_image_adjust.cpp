@@ -20,6 +20,7 @@ private slots:
     void channelGain_boostsThatChannel();
     void hueBand_boostsMatchingHueSaturation();
     void hueBand_leavesOtherHuesAndNeutralsAlone();
+    void blacks_upLightensDownDarkens();
     void edits_jsonRoundTrip();
     void manifest_keepsAdjustColorBetweenCropAndBw();
     void manifest_renderAfterCropSkipsOrientationAndCrop();
@@ -126,7 +127,10 @@ void ImageAdjustTest::edits_jsonRoundTrip() {
     ra.fromJson(a.toJson());
     QImage src = solid(16, 16, QColor(90, 140, 200));
     QCOMPARE(ra.apply(src), a.apply(src));
-    QCOMPARE(ra.summary(), QStringLiteral("adjustments"));
+    // The summary lists the specific, non-zero adjustments (not a bare label).
+    QCOMPARE(ra.summary(), a.summary());
+    QVERIFY(ra.summary().contains("brightness +10"));
+    QVERIFY(ra.summary().contains("blacks -15"));
 
     ColorEdit c;
     ColorParams cp; cp.temperature = -25; cp.tint = 15; cp.red = 8; cp.green = -8; cp.blue = 20;
@@ -136,7 +140,19 @@ void ImageAdjustTest::edits_jsonRoundTrip() {
     ColorEdit rc;
     rc.fromJson(c.toJson());
     QCOMPARE(rc.apply(src), c.apply(src));
-    QCOMPARE(rc.summary(), QStringLiteral("color"));
+    QCOMPARE(rc.summary(), c.summary());
+    QVERIFY(rc.summary().contains("temp -25"));
+    QVERIFY(rc.summary().contains("sat"));   // a per-hue band is named with a "sat" suffix
+}
+
+// Blacks: up (+) lifts shadows lighter; down (−) crushes them darker.
+void ImageAdjustTest::blacks_upLightensDownDarkens() {
+    QImage src = solid(4, 4, QColor(40, 40, 40));   // a dark grey
+    AdjustParams up;   up.blacks = 80;
+    AdjustParams down; down.blacks = -80;
+    const int base = src.pixelColor(1, 1).red();
+    QVERIFY(ImageAdjust::applyTone(src, up).pixelColor(1, 1).red()   > base);
+    QVERIFY(ImageAdjust::applyTone(src, down).pixelColor(1, 1).red() < base);
 }
 
 void ImageAdjustTest::manifest_keepsAdjustColorBetweenCropAndBw() {
