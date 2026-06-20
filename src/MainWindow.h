@@ -1,20 +1,22 @@
 #pragma once
 #include "EditManifest.h"
 #include "ExifReader.h"
-#include <QFutureWatcher>
 #include <QImage>
+#include <QList>
 #include <QMainWindow>
 #include <QString>
-#include <QTransform>
 #include <Qt>
 
 class AdjustPanel;
 class BackgroundColorPicker;
 class BwPanel;
+class CompareTabBar;
 class ExifOverlay;
 class HelpOverlay;
 class ExitOverlay;
+class ImagePane;
 class ImageViewer;
+class QHBoxLayout;
 class QResizeEvent;
 class QTimer;
 
@@ -28,13 +30,25 @@ public slots:
     void toggleFullscreen();
 
 public:
-    // Display-only metadata derived from the current edit manifest (orientation/
-    // crop/B&W summary plus original and current dimensions). Merged into the EXIF
-    // data shown by the metadata overlay. Public for tests.
+    // Display-only metadata derived from the focused pane's edit manifest. Merged
+    // into the EXIF data shown by the metadata overlay. Public for tests.
     ExifReader::ExifData imageStateData() const;
 
-    // The manifest is the canonical record of all applied edits. Exposed for tests.
-    const EditManifest &manifest() const { return m_manifest; }
+    // The focused pane's manifest — the canonical record of its applied edits.
+    // Exposed for tests.
+    const EditManifest &manifest() const;
+
+    // The currently focused image's viewer (the one keyboard shortcuts act on).
+    // Public for tests.
+    ImageViewer *activeViewer() const;
+
+    // True while two images are open side by side.
+    bool compareMode() const { return m_panes.size() > 1; }
+
+    // Open a second image for side-by-side compare. The Shift+O shortcut routes
+    // through the native open dialog before calling this; exposed directly so the
+    // comparison flow can be driven in tests.
+    void openComparison(const QString &path);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -43,33 +57,48 @@ protected:
 private:
     enum class OrientationStep { RotateCW, FlipH, FlipV };
 
-    // Capture the freshly-loaded disk image and (re-)apply the saved manifest.
-    void onImageLoaded(const QString &path);
-    // Re-derive the pixmap buffers from the manifest via the edit interface.
-    void rebuildOriented();   // m_orientedImage = orientation edit applied to disk
-    void rebuildBase();       // m_baseImage = crop edit applied to oriented
-    void showBase();          // push the (color) base image to the viewer
-    void persistManifest();   // save the manifest for the current image path
-    bool bwActive() const { return m_manifest.bw() != nullptr; }
-    // True when any post-crop edit (adjust / color / B&W) is applied, so the
-    // displayed image must be re-rendered off the base rather than shown as-is.
-    bool hasDisplayEdits() const;
+    ImagePane *focused() const;
 
-    // The single live-display pipeline shared by adjust, color, and B&W: derive
-    // the shown image from m_baseImage by applying the post-crop edits off-thread.
-    void scheduleRender();    // debounce, or show base directly when nothing applies
-    void applyRender();       // launch the off-thread render of the post-crop edits
+    // --- Pane / compare management ---------------------------------------
+    ImagePane *createPane(const QString &path);   // build + wire a pane (not laid out)
+    void wirePane(ImagePane *pane);               // connect that pane's viewer signals
+    void openSecondImage();                       // Shift+O: enter side-by-side compare
+    void closePane(int index);                    // ✕: back to single-image mode
+    void setFocusIndex(int index);                // make a pane the focused one
+    void updateTabBar();                          // rebuild / hide the compare tab strip
+    void updateWindowTitle();                     // title from the focused image
+    void syncPanelsToFocused();                   // reflect focused manifest in the panels
+    void syncView(ImagePane *src, ImagePane *dst);// copy relative zoom/pan src → dst
+    void syncViewFrom(ImagePane *src);            // src changed → mirror onto the other
 
+    // --- Focused-pane action handlers ------------------------------------
     void onAdjustPanelRequested();
     void onBwPanelRequested();
     void toggleCompare();
     void deactivateBw();
+    void onCropModeChanged(ImagePane *pane, bool cropActive);
     void applyOrientationStep(OrientationStep step);
+    void toggleExif();
+    void showColorPicker();
+    void saveFocused();
+    void openExternalFocused(bool useOriginal);
+    void openExternalPickerFocused();
+    void folderBrowseFocused();
+    void requestExit();
     void exitApplication();
     void openFile();
     void updateExternalEditorName();
 
-    ImageViewer *m_viewer = nullptr;
+    // Layout: a container holding the compare tab strip above a horizontal row of
+    // pane viewers (one viewer in single mode, two side by side in compare mode).
+    QWidget       *m_container      = nullptr;
+    QHBoxLayout   *m_viewersLayout  = nullptr;
+    CompareTabBar *m_tabBar         = nullptr;
+
+    QList<ImagePane *> m_panes;
+    int  m_focus        = 0;
+    bool m_syncingViews = false;   // re-entrancy guard for view synchronization
+
     HelpOverlay *m_helpOverlay = nullptr;
     ExifOverlay *m_exifOverlay = nullptr;
     ExitOverlay *m_exitOverlay = nullptr;
@@ -77,23 +106,10 @@ private:
     BackgroundColorPicker *m_colorPicker = nullptr;
     Qt::WindowStates m_windowStateBeforeFullscreen = Qt::WindowNoState;
     bool m_forwardingKeyEvent = false;
+    int  m_backgroundGrey = 0;     // shared across panes so both images match
 
-    // The single source of truth for what edits are applied, and in what order.
-    EditManifest m_manifest;
+    BwPanel     *m_bwPanel     = nullptr;
+    AdjustPanel *m_adjustPanel = nullptr;
 
-    // Pixmap buffers, all derived from the manifest applied to the disk image:
-    QImage m_diskImage;      // image exactly as loaded from disk; never edited
-    QImage m_orientedImage;  // disk image with the orientation edit applied (crop base)
-    QImage m_baseImage;      // oriented image with the crop edit applied (B&W source)
-
-    BwPanel                *m_bwPanel       = nullptr;
-    AdjustPanel            *m_adjustPanel   = nullptr;
-
-    // Shared live-display state for the post-crop edit pipeline.
-    QPixmap                 m_lastRenderPixmap;  // most recent rendered display image
-    bool                    m_comparing     = false;  // showing the original color base
-    QFutureWatcher<QImage> *m_renderWatcher = nullptr;
-    QTimer                 *m_renderDebounce = nullptr;
-
-    QTimer                 *m_exitDebounce  = nullptr;
+    QTimer *m_exitDebounce = nullptr;
 };

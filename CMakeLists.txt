@@ -42,6 +42,8 @@ configure_file(src/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/version.h" @ONLY)
 add_library(photo-salon-lib STATIC
     src/MainWindow.cpp
     src/ImageViewer.cpp
+    src/ImagePane.cpp
+    src/CompareTabBar.cpp
     src/HelpOverlay.cpp
     src/ImageFormats.cpp
     src/BackgroundColorPicker.cpp

@@ -123,3 +123,15 @@ original on disk is never modified — use `S` to save an edited copy.
 Press `?` in the app for the full list of shortcuts. The editing keys are `C` (adjust light,
 levels & colour — a two-tab pop-up panel), `X` (crop), `W` (black & white), `R` (rotate),
 `H` / `V` (flip), and `\` (compare against the original colour image).
+
+### Compare two images side by side
+
+Press `Shift+O` to open a second image alongside the current one. A minimal tab bar appears
+at the top showing both file names; the **focused** image (the one all editing shortcuts act
+on) is shown with a lighter tab. Click a tab — or click into an image — to change focus, and
+click the `✕` on a tab to close it and return to single-image mode with the other photo.
+
+While comparing, **zoom and pan are synchronized relative to each image's pixels**, not their
+on-screen size: panning to a point 25 % down and 70 % across one image centres the other on
+the same relative point, and a zoom level is relative to "fit", so the two stay matched even
+when the photos differ greatly in resolution.

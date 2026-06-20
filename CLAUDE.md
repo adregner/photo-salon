@@ -57,15 +57,27 @@ is in **`doc/ARCHITECTURE.md`**. The essentials:
 - **`ImageViewer`** (`QGraphicsView`) — display + input; owns the scene and the single
   pixmap item. It never holds transform/business state: keys it doesn't act on directly
   become **signals**.
-- **`MainWindow`** (`QMainWindow`) — orchestrator; owns every overlay/panel and the
-  **`EditManifest`** (the canonical edit state), and runs the display pipeline. Wires
-  viewer signals to handlers.
+- **`ImagePane`** (`QObject`) — all per-image state: one `ImageViewer`, that image's
+  **`EditManifest`**, the derived buffers, and its off-thread render pipeline. One pane in
+  single mode; two (each fully independent) in side-by-side compare mode.
+- **`MainWindow`** (`QMainWindow`) — orchestrator; owns the panes, every shared
+  overlay/panel, and the compare `CompareTabBar`. Runs the display pipeline via the
+  **focused** pane and wires each pane's viewer signals to handlers.
 - **`main.cpp`** — CLI parsing only. An empty path is valid (idle state).
+
+### Side-by-side compare
+
+`Shift+O` opens a second image into a second `ImagePane` beside the first, with a minimal
+tab bar (`CompareTabBar`) naming both. Exactly one pane is **focused** (lighter tab); all
+editing shortcuts act only on it. Clicking a tab or an image changes focus; the tab's `✕`
+closes that pane and returns to single mode. Zoom/pan stay in sync **relative to each image's
+pixels** — `ImageViewer::relativeZoom()` / `relativeCenter()` / `applyRelativeView()`, driven
+off the focused viewer's `viewChanged` signal.
 
 ### The edit manifest (canonical edit state)
 
-All modifications live in one ordered **`EditManifest`** owned by `MainWindow`. It is the
-single source of truth for *what* is applied and *in what order*. Each modification is an
+All modifications live in one ordered **`EditManifest`** owned by the (focused) `ImagePane`.
+It is the single source of truth for *what* is applied and *in what order*. Each modification is an
 **`ImageEdit`** — a common interface (`apply(QImage)` on an in-memory buffer, plus JSON
 (de)serialization) implemented by `OrientationEdit`, `CropEdit`, `AdjustEdit`, `ColorEdit`,
 and `BwEdit`. The manifest
@@ -74,7 +86,7 @@ file re-applies the same edits (`EditManifest::saveFor` / `loadFor`).
 
 ### Display pipeline & pixmap state
 
-Features that change the screen run in one ordered pipeline owned by `MainWindow`:
+Features that change the screen run in one ordered pipeline owned by each `ImagePane`:
 **disk → orientation → crop → adjust → color → B&W → display**. The buffers are **`QImage`** (so edits run
 off the GUI thread), each *derived from the manifest* applied to the previous stage:
 
@@ -110,4 +122,5 @@ the main thread (`QtConcurrent` + `QFutureWatcher`), like B&W.
 | Build system, deps, tests, packaging, CI release | `doc/BUILD.md` |
 | Windows cross-compile & code signing | `doc/WINDOWS.md` |
 | End-user install / run / packaging | `README.md` |
+| Per-image state & compare panes | `src/ImagePane.h`, `src/CompareTabBar.h`, `doc/ARCHITECTURE.md` |
 | Planned & researched features | `ROADMAP.md` |

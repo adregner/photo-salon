@@ -43,7 +43,7 @@ private slots:
 
 private:
     ImageViewer *viewerOf(MainWindow &w) {
-        return qobject_cast<ImageViewer *>(w.centralWidget());
+        return w.activeViewer();
     }
     QImage makeImage(int w, int h, QColor c = Qt::darkCyan) {
         QImage img(w, h, QImage::Format_RGB32);
