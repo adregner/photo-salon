@@ -235,6 +235,10 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         emit exifRequested();
         event->accept();
         break;
+    case Qt::Key_G:
+        emit histogramRequested();
+        event->accept();
+        break;
     case Qt::Key_P:
         // On macOS Qt maps physical Ctrl → MetaModifier; Cmd → ControlModifier.
         // Check MetaModifier on macOS so Ctrl+P means the physical Control key everywhere.
@@ -410,6 +414,10 @@ void ImageViewer::setCropMode(bool active) {
         viewport()->setCursor(Qt::ArrowCursor);
     }
 
+    // Entering crop swaps in the full oriented original and leaving it swaps in
+    // the cropped region, so either way what is on screen — and therefore the
+    // histogram — has changed.
+    emit displayImageChanged();
     emit cropModeChanged(m_cropMode);
 }
 
@@ -615,6 +623,7 @@ void ImageViewer::setDisplayPixmap(const QPixmap &px) {
         m_scene->setSceneRect(px.rect());
         if (m_fitted) fitImage();
     }
+    emit displayImageChanged();
 }
 
 void ImageViewer::setBasePixmapForCrop(const QPixmap &px) {

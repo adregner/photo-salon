@@ -21,7 +21,8 @@ ImagePane::ImagePane(const QString &imagePath, QWidget *viewerParent)
 
     m_renderWatcher = new QFutureWatcher<QImage>(this);
     connect(m_renderWatcher, &QFutureWatcher<QImage>::finished, this, [this]() {
-        m_lastRenderPixmap = QPixmap::fromImage(m_renderWatcher->result());
+        m_lastRenderImage  = m_renderWatcher->result();
+        m_lastRenderPixmap = QPixmap::fromImage(m_lastRenderImage);
         // Don't clobber the crop UI, show a stale result, or override compare.
         if (hasDisplayEdits() && !m_comparing && !m_viewer->cropMode())
             m_viewer->setDisplayPixmap(m_lastRenderPixmap);
@@ -49,6 +50,7 @@ void ImagePane::reloadFromDisk() {
     // Reset transient view state for the new image.
     m_comparing = false;
     m_renderDebounce->stop();
+    m_lastRenderImage  = {};
     m_lastRenderPixmap = {};
 
     rebuildOriented();
@@ -87,6 +89,15 @@ void ImagePane::showBase() {
 
 void ImagePane::persistManifest() {
     m_manifest.saveFor(path());
+}
+
+QImage ImagePane::displayImage() const {
+    // The crop UI shows the full oriented original, not the cropped base.
+    if (m_viewer && m_viewer->cropMode() && !m_orientedImage.isNull())
+        return m_orientedImage;
+    if (m_comparing || !hasDisplayEdits())
+        return m_baseImage;
+    return m_lastRenderImage.isNull() ? m_baseImage : m_lastRenderImage;
 }
 
 bool ImagePane::hasDisplayEdits() const {

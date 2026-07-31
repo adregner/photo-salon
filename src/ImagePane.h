@@ -42,6 +42,12 @@ public:
     void setComparing(bool c) { m_comparing = c; }
     QPixmap lastRenderPixmap() const { return m_lastRenderPixmap; }
 
+    // The image currently on screen for this pane, as a QImage — what the
+    // histogram measures. Mirrors the display logic: the crop UI shows the full
+    // oriented original, comparing shows the colour base, and otherwise it is the
+    // rendered result (falling back to the base until the first render lands).
+    QImage displayImage() const;
+
     bool bwActive() const { return m_manifest.bw() != nullptr; }
     // True when any post-crop edit (adjust / color / B&W) is applied, so the
     // displayed image must be re-rendered off the base rather than shown as-is.
@@ -81,6 +87,7 @@ private:
     QImage m_orientedImage;  // disk image with the orientation edit applied (crop base)
     QImage m_baseImage;      // oriented image with the crop edit applied (B&W source)
 
+    QImage                  m_lastRenderImage;   // most recent render, pre-conversion
     QPixmap                 m_lastRenderPixmap;  // most recent rendered display image
     bool                    m_comparing = false; // showing the original color base
     QFutureWatcher<QImage> *m_renderWatcher = nullptr;

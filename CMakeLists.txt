@@ -45,6 +45,8 @@ add_library(photo-salon-lib STATIC
     src/ImagePane.cpp
     src/CompareTabBar.cpp
     src/HelpOverlay.cpp
+    src/Histogram.cpp
+    src/HistogramOverlay.cpp
     src/ImageFormats.cpp
     src/BackgroundColorPicker.cpp
     src/BwConverter.cpp

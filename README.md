@@ -124,6 +124,20 @@ Press `?` in the app for the full list of shortcuts. The editing keys are `C` (a
 levels & colour — a two-tab pop-up panel), `X` (crop), `W` (black & white), `R` (rotate),
 `H` / `V` (flip), and `\` (compare against the original colour image).
 
+### Histogram
+
+Press `G` for a histogram of the photo on screen, drawn the way a professional camera draws
+it: the red, green and blue channels plotted additively — overlaps read yellow, cyan or
+white — over a filled luminance curve for overall exposure, with a tone ramp beneath and
+clipping readouts (`▼` shadows, `▲` highlights) whenever more than 0.1 % of a channel is
+pinned at either end.
+
+It is a corner panel, not a full-screen sheet, so the photo stays visible, and it updates
+live: adjust the light, convert to black & white, crop, or move to the next photo and the
+histogram follows. Press `G` again (or `Escape`) to dismiss it.
+
+![Histogram over a high-key photograph](doc/screenshots/histogram-high-key.jpg)
+
 ### Compare two images side by side
 
 Press `Shift+O` to open a second image alongside the current one. A minimal tab bar appears

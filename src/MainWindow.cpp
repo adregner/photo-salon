@@ -8,6 +8,7 @@
 #include "ExifReader.h"
 #include "ExternalLauncher.h"
 #include "HelpOverlay.h"
+#include "HistogramOverlay.h"
 #include "ExitOverlay.h"
 #include "ImageAdjust.h"
 #include "ImagePane.h"
@@ -80,6 +81,11 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
 
     m_exifOverlay = new ExifOverlay(this);
     m_exifOverlay->raise();
+
+    // A camera-style corner panel rather than a full-window sheet: it stays up
+    // while the photo is edited and tracks whatever is on screen.
+    m_histogramOverlay = new HistogramOverlay(this);
+    m_histogramOverlay->raise();
 
     m_colorPicker = new BackgroundColorPicker(this);
     m_colorPicker->hide();
@@ -226,8 +232,16 @@ void MainWindow::wirePane(ImagePane *pane) {
 
     connect(v, &ImageViewer::viewChanged, this, [this, pane] { syncViewFrom(pane); });
 
+    // The histogram reads whatever the focused pane currently displays, so every
+    // change to that pane's picture re-measures it.
+    connect(v, &ImageViewer::displayImageChanged, this, [this, pane] {
+        if (pane == focused())
+            refreshHistogram();
+    });
+
     connect(v, &ImageViewer::helpVisibilityChanged, m_helpOverlay, &QWidget::setVisible);
     connect(v, &ImageViewer::exifRequested,         this, &MainWindow::toggleExif);
+    connect(v, &ImageViewer::histogramRequested,    this, &MainWindow::toggleHistogram);
     connect(v, &ImageViewer::fullscreenToggleRequested, this, &MainWindow::toggleFullscreen);
     connect(v, &ImageViewer::backgroundPickerRequested, this, &MainWindow::showColorPicker);
     connect(v, &ImageViewer::saveRequested,         this, &MainWindow::saveFocused);
@@ -311,6 +325,7 @@ void MainWindow::closePane(int index) {
     m_focus = 0;       // the lone survivor becomes the focused pane
     updateTabBar();    // single image again → strip hides
     syncPanelsToFocused();
+    refreshHistogram();
     updateWindowTitle();
     focused()->viewer()->setFocus();
 }
@@ -322,6 +337,7 @@ void MainWindow::setFocusIndex(int index) {
     if (compareMode())
         m_tabBar->setFocusedIndex(m_focus);   // restyle only; don't rebuild tabs
     syncPanelsToFocused();
+    refreshHistogram();   // the histogram follows the focused image
     updateWindowTitle();
     // The newly focused image becomes the one that drives view synchronization;
     // the two are already aligned, so there is nothing to mirror right now.
@@ -331,15 +347,19 @@ void MainWindow::setFocusIndex(int index) {
 void MainWindow::updateTabBar() {
     if (!compareMode()) {
         m_tabBar->hide();
-        return;
+    } else {
+        QStringList names;
+        for (ImagePane *p : m_panes) {
+            const QString path = p->path();
+            names << (path.isEmpty() ? QStringLiteral("(none)") : QFileInfo(path).fileName());
+        }
+        m_tabBar->setTabs(names, m_focus);
+        m_tabBar->show();
     }
-    QStringList names;
-    for (ImagePane *p : m_panes) {
-        const QString path = p->path();
-        names << (path.isEmpty() ? QStringLiteral("(none)") : QFileInfo(path).fileName());
-    }
-    m_tabBar->setTabs(names, m_focus);
-    m_tabBar->show();
+    // The strip appearing or disappearing moves the top edge the histogram panel
+    // is anchored to.
+    if (m_histogramOverlay && m_histogramOverlay->isVisible())
+        positionHistogram();
 }
 
 void MainWindow::updateWindowTitle() {
@@ -398,6 +418,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     if (ke->key() == Qt::Key_Escape) {
         if (m_exifOverlay && m_exifOverlay->isVisible()) {
             m_exifOverlay->hide();
+            return true;
+        }
+        if (m_histogramOverlay && m_histogramOverlay->isVisible()) {
+            m_histogramOverlay->hide();
             return true;
         }
         if (m_colorPicker && m_colorPicker->isVisible()) {
@@ -475,6 +499,8 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
         m_exifOverlay->resize(size());
     if (m_exitOverlay)
         m_exitOverlay->resize(size());
+    if (m_histogramOverlay && m_histogramOverlay->isVisible())
+        positionHistogram();
     if (m_colorPicker && m_colorPicker->isVisible()) {
         int y = height() - m_colorPicker->sizeHint().height() - 10;
         m_colorPicker->move(10, y);
@@ -505,6 +531,34 @@ void MainWindow::toggleExif() {
     m_exifOverlay->setData(data);
     m_exifOverlay->show();
     m_exifOverlay->raise();
+}
+
+// ---------------------------------------------------------------------------
+// Histogram panel
+// ---------------------------------------------------------------------------
+void MainWindow::toggleHistogram() {
+    if (m_histogramOverlay->isVisible()) {
+        m_histogramOverlay->hide();
+        return;
+    }
+    positionHistogram();
+    m_histogramOverlay->show();
+    m_histogramOverlay->raise();
+    refreshHistogram();   // measured before the first paint, so nothing stale shows
+}
+
+void MainWindow::refreshHistogram() {
+    if (!m_histogramOverlay || !m_histogramOverlay->isVisible())
+        return;   // hidden: measured again from toggleHistogram() when reopened
+    m_histogramOverlay->setData(Histogram::compute(focused()->displayImage()));
+}
+
+void MainWindow::positionHistogram() {
+    if (!m_histogramOverlay) return;
+    m_histogramOverlay->resize(HistogramOverlay::panelSizeFor(size()));
+    // Top-right, clear of the compare tab strip when it is up.
+    const int top = m_tabBar && m_tabBar->isVisible() ? m_tabBar->height() + 12 : 20;
+    m_histogramOverlay->move(width() - m_histogramOverlay->width() - 20, top);
 }
 
 // ---------------------------------------------------------------------------

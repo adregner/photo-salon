@@ -13,6 +13,7 @@ class BwPanel;
 class CompareTabBar;
 class ExifOverlay;
 class HelpOverlay;
+class HistogramOverlay;
 class ExitOverlay;
 class ImagePane;
 class ImageViewer;
@@ -79,6 +80,9 @@ private:
     void onCropModeChanged(ImagePane *pane, bool cropActive);
     void applyOrientationStep(OrientationStep step);
     void toggleExif();
+    void toggleHistogram();      // G: show/hide the histogram panel
+    void refreshHistogram();     // recompute from the focused pane's displayed image
+    void positionHistogram();    // anchor the panel to the top-right corner
     void showColorPicker();
     void saveFocused();
     void openExternalFocused(bool useOriginal);
@@ -101,6 +105,7 @@ private:
 
     HelpOverlay *m_helpOverlay = nullptr;
     ExifOverlay *m_exifOverlay = nullptr;
+    HistogramOverlay *m_histogramOverlay = nullptr;
     ExitOverlay *m_exitOverlay = nullptr;
     QWidget     *m_idleOverlay = nullptr;
     BackgroundColorPicker *m_colorPicker = nullptr;
