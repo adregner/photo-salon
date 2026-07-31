@@ -14,6 +14,8 @@
 #include "ImageFormats.h"
 #include "ImageViewer.h"
 #include "OpenDialog.h"
+#include "RotateGeometry.h"
+#include "RotatePanel.h"
 #include <QApplication>
 #include <QDialog>
 #include <QDir>
@@ -111,6 +113,21 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
         pane->persistManifest();
         pane->scheduleRender();
     });
+
+    // The rotate panel is the visible face of rotate mode: MainWindow shows and
+    // hides it with the mode rather than letting it dismiss itself.
+    m_rotatePanel = new RotatePanel(this);
+    m_rotatePanel->hide();
+
+    connect(m_rotatePanel, &RotatePanel::angleChanged, this, [this](double degrees) {
+        ImageViewer *viewer = activeViewer();
+        if (viewer->rotateMode())
+            viewer->setRotateAngle(degrees);
+    });
+    connect(m_rotatePanel, &RotatePanel::rotateLeftRequested,  this,
+            [this] { applyOrientationStep(OrientationStep::RotateCCW); });
+    connect(m_rotatePanel, &RotatePanel::rotateRightRequested, this,
+            [this] { applyOrientationStep(OrientationStep::RotateCW); });
 
     m_bwPanel = new BwPanel(this);
     m_bwPanel->hide();
@@ -221,6 +238,7 @@ void MainWindow::wirePane(ImagePane *pane) {
             syncPanelsToFocused();
             m_adjustPanel->hide();
             m_bwPanel->hide();
+            m_rotatePanel->hide();   // loading resets the viewer's overlay mode
         }
     });
 
@@ -236,11 +254,17 @@ void MainWindow::wirePane(ImagePane *pane) {
     connect(v, &ImageViewer::adjustPanelRequested,  this, &MainWindow::onAdjustPanelRequested);
     connect(v, &ImageViewer::bwPanelRequested,      this, &MainWindow::onBwPanelRequested);
     connect(v, &ImageViewer::bwCompareRequested,    this, &MainWindow::toggleCompare);
-    connect(v, &ImageViewer::cropModeChanged, this, [this, pane](bool active) {
-        onCropModeChanged(pane, active);
+    // Crop and rotate are two faces of one overlay: either signal means the
+    // overlay's state changed, and only closing it applies anything.
+    connect(v, &ImageViewer::cropModeChanged,   this, [this, pane] { onOverlayModeChanged(pane); });
+    connect(v, &ImageViewer::rotateModeChanged, this, [this, pane] { onOverlayModeChanged(pane); });
+    connect(v, &ImageViewer::rotateAngleChanged, this, [this, pane](double degrees) {
+        if (pane == focused()) {
+            QSignalBlocker block(m_rotatePanel);
+            m_rotatePanel->setAngle(degrees);
+        }
     });
     connect(v, &ImageViewer::folderBrowseRequested, this, &MainWindow::folderBrowseFocused);
-    connect(v, &ImageViewer::rotateRequested,         this, [this] { applyOrientationStep(OrientationStep::RotateCW); });
     connect(v, &ImageViewer::flipHorizontalRequested, this, [this] { applyOrientationStep(OrientationStep::FlipH); });
     connect(v, &ImageViewer::flipVerticalRequested,   this, [this] { applyOrientationStep(OrientationStep::FlipV); });
     connect(v, &ImageViewer::exitRequested,     this, &MainWindow::requestExit);
@@ -362,6 +386,19 @@ void MainWindow::syncPanelsToFocused() {
         m_bwPanel->setParams(pane->manifest().bw()->params());
     }
     m_bwPanel->setComparing(pane->comparing());
+
+    // Rotate mode belongs to one pane at a time, so its panel follows the focus.
+    {
+        QSignalBlocker block(m_rotatePanel);
+        m_rotatePanel->setAngle(pane->viewer()->rotateAngle());
+    }
+    if (pane->viewer()->rotateMode()) {
+        m_rotatePanel->move(10, height() - m_rotatePanel->sizeHint().height() - 10);
+        m_rotatePanel->show();
+        m_rotatePanel->raise();
+    } else {
+        m_rotatePanel->hide();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -416,8 +453,8 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             m_adjustPanel->hide();
             return true;
         }
-        if (viewer && viewer->cropMode()) {
-            viewer->setCropMode(false);
+        if (viewer && viewer->overlayActive()) {
+            viewer->closeOverlay();
             return true;
         }
         if (windowState() & Qt::WindowFullScreen) {
@@ -486,6 +523,10 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     if (m_adjustPanel && m_adjustPanel->isVisible()) {
         int y = height() - m_adjustPanel->sizeHint().height() - 10;
         m_adjustPanel->move(10, y);
+    }
+    if (m_rotatePanel && m_rotatePanel->isVisible()) {
+        int y = height() - m_rotatePanel->sizeHint().height() - 10;
+        m_rotatePanel->move(10, y);
     }
 }
 
@@ -692,22 +733,53 @@ void MainWindow::deactivateBw() {
 }
 
 // ---------------------------------------------------------------------------
-// Crop apply (focused image)
+// Crop / rotate overlay (focused image)
 // ---------------------------------------------------------------------------
-void MainWindow::onCropModeChanged(ImagePane *pane, bool cropActive) {
+void MainWindow::onOverlayModeChanged(ImagePane *pane) {
     ImageViewer *viewer = pane->viewer();
-    if (cropActive) {
-        // Entering crop: the crop UI shows the color image; the pane's pending
-        // render (if any) is stopped by scheduleRender()'s cropMode() guard.
-        return;
+
+    // Rotate mode's panel is tied to the mode, and only for the focused pane.
+    if (pane == focused()) {
+        if (viewer->rotateMode()) {
+            QSignalBlocker block(m_rotatePanel);
+            m_rotatePanel->setAngle(viewer->rotateAngle());
+            m_rotatePanel->move(10, height() - m_rotatePanel->sizeHint().height() - 10);
+            m_rotatePanel->show();
+            m_rotatePanel->raise();
+        } else {
+            m_rotatePanel->hide();
+        }
     }
-    QRectF sel = viewer->cropRect();
+
+    // While either mode is on, the overlay owns the display and nothing is
+    // applied — including when switching straight from crop to rotate.
+    if (viewer->overlayActive()) return;
+
+    commitOverlay(pane);
+}
+
+void MainWindow::commitOverlay(ImagePane *pane) {
+    ImageViewer *viewer = pane->viewer();
+
+    // The free angle first: the crop selection is expressed in the rotated
+    // image's coordinates, so the rotated buffer has to exist before the
+    // selection can be normalized against it.
+    RotateEdit &r = pane->manifest().ensureRotate();
+    r.setAngle(viewer->rotateAngle());
+    if (r.isIdentity())
+        pane->manifest().removeRotate();
+
+    const QRectF selection = viewer->cropRect();
+    pane->rebuildOriented();
+
+    QRectF sel = selection;
     if (!sel.isValid() || sel.isEmpty())
         sel = QRectF(QPointF(0, 0), QSizeF(pane->orientedImage().size()));
     CropEdit &c = pane->manifest().ensureCrop();
     c.setRect(CropEdit::toNormalized(sel, pane->orientedImage().size()));
     if (c.isFull())
         pane->manifest().removeCrop();
+
     pane->rebuildBase();
     pane->persistManifest();
     pane->setComparing(false);
@@ -727,46 +799,68 @@ void MainWindow::applyOrientationStep(OrientationStep step) {
     ImageViewer *viewer = pane->viewer();
     if (pane->diskImage().isNull()) return;
 
-    // If crop is active, apply it first so the transform acts on the cropped image.
-    if (viewer->cropMode())
-        viewer->setCropMode(false);
+    // A quarter turn is available from inside rotate mode (its two buttons), so
+    // it has to work without tearing the overlay down: when one is open the live
+    // selection is the authority, otherwise the manifest's is.
+    const bool overlay = viewer->overlayActive();
 
-    // Capture the crop selection in the OLD oriented coordinate space before the
+    // Capture the crop selection in the OLD rotated coordinate space before the
     // orientation changes, so it can be re-mapped afterwards.
-    const bool hadCrop = pane->manifest().crop() != nullptr;
+    const QSize oldRotated = overlay ? viewer->rotatedBoundsRect().size().toSize()
+                                     : pane->orientedImage().size();
+    const bool hadCrop = overlay || pane->manifest().crop() != nullptr;
     QRectF oldCropPx;
-    if (hadCrop)
+    if (overlay)
+        oldCropPx = viewer->cropRect();
+    else if (pane->manifest().crop())
         oldCropPx = QRectF(CropEdit::toPixels(pane->manifest().crop()->rect(), pane->orientedImage().size()));
-    const QSize oldOriented = pane->orientedImage().size();
 
     OrientationEdit &o = pane->manifest().ensureOrientation();
     QTransform incr;
     switch (step) {
-    case OrientationStep::RotateCW: o.rotateClockwise(); incr = QTransform().rotate(90);   break;
-    case OrientationStep::FlipH:    o.flipHorizontal();  incr = QTransform().scale(-1, 1); break;
-    case OrientationStep::FlipV:    o.flipVertical();    incr = QTransform().scale(1, -1); break;
+    case OrientationStep::RotateCW:  o.rotateClockwise();        incr = QTransform().rotate(90);   break;
+    case OrientationStep::RotateCCW: o.rotateCounterClockwise(); incr = QTransform().rotate(-90);  break;
+    case OrientationStep::FlipH:     o.flipHorizontal();         incr = QTransform().scale(-1, 1); break;
+    case OrientationStep::FlipV:     o.flipVertical();           incr = QTransform().scale(1, -1); break;
     }
     if (o.isIdentity())
         pane->manifest().removeOrientation();
 
-    // Re-derive the oriented image and re-arm the crop base BEFORE remapping the
-    // crop rect: setCropRect() clamps against the (new) crop base, and a 90°/270°
-    // rotation swaps width and height, so clamping against the stale bounds would
-    // clip the mapped selection.
-    pane->rebuildOriented();
-
-    // Remap the saved crop rect so re-entering crop still pre-selects the same
-    // region, using the same translation Qt bakes into transformed().
-    if (hadCrop) {
-        QTransform full = QPixmap::trueMatrix(incr, oldOriented.width(), oldOriented.height());
-        viewer->setCropRect(full.mapRect(oldCropPx));
-        pane->manifest().crop()->setRect(
-            CropEdit::toNormalized(viewer->cropRect(), pane->orientedImage().size()));
+    // Quarter turns commute with a free rotation, so the angle rides along
+    // untouched. A flip does not: mirroring the frame reverses which way the
+    // image leans, so negate the angle to keep the picture the user is looking
+    // at exactly mirrored.
+    if (step == OrientationStep::FlipH || step == OrientationStep::FlipV) {
+        if (RotateEdit *rot = pane->manifest().rotate()) {
+            rot->setAngle(-rot->angle());
+            if (rot->isIdentity())
+                pane->manifest().removeRotate();
+        }
     }
 
-    pane->rebuildBase();
+    // Re-derive the oriented image and re-arm the overlay base BEFORE remapping
+    // the crop rect: setCropRect() clamps against the (new) bounds, and a
+    // 90°/270° rotation swaps width and height, so clamping against the stale
+    // bounds would clip the mapped selection.
+    pane->rebuildOriented();
+
+    // Remap the crop rect so the same region stays selected, using the same
+    // translation Qt bakes into transformed().
+    if (hadCrop) {
+        QTransform full = QPixmap::trueMatrix(incr, oldRotated.width(), oldRotated.height());
+        viewer->setCropRect(full.mapRect(oldCropPx));
+        if (!overlay)
+            pane->manifest().crop()->setRect(
+                CropEdit::toNormalized(viewer->cropRect(), pane->orientedImage().size()));
+    }
+
     pane->persistManifest();
 
+    // With an overlay open the new base is already on screen and the selection
+    // is committed when the mode closes; there is nothing to render yet.
+    if (overlay) return;
+
+    pane->rebuildBase();
     pane->setComparing(false);
     m_bwPanel->setComparing(false);
     if (pane->hasDisplayEdits())

@@ -17,10 +17,10 @@ class QWidget;
 // single-image mode MainWindow owns exactly one pane; in side-by-side compare
 // mode it owns two, each fully independent so edits apply only to its own image.
 //
-// The pane owns the canonical pipeline (disk → orientation → crop → post-crop
-// render → display); MainWindow drives it (mutating the manifest, then asking
-// the pane to re-derive). The shared edit panels/overlays stay in MainWindow and
-// always act on the *focused* pane.
+// The pane owns the canonical pipeline (disk → orientation → rotate → crop →
+// post-crop render → display); MainWindow drives it (mutating the manifest, then
+// asking the pane to re-derive). The shared edit panels/overlays stay in
+// MainWindow and always act on the *focused* pane.
 // ---------------------------------------------------------------------------
 class ImagePane : public QObject {
     Q_OBJECT
@@ -35,6 +35,7 @@ public:
     const EditManifest &manifest() const { return m_manifest; }
 
     const QImage &diskImage() const { return m_diskImage; }
+    const QImage &uprightImage() const { return m_uprightImage; }
     const QImage &orientedImage() const { return m_orientedImage; }
     const QImage &baseImage() const { return m_baseImage; }
 
@@ -48,7 +49,7 @@ public:
     bool hasDisplayEdits() const;
 
     // Re-derive the pixmap buffers from the manifest via the edit interface.
-    void rebuildOriented();   // m_orientedImage = orientation edit applied to disk
+    void rebuildOriented();   // m_uprightImage, then m_orientedImage (free rotation)
     void rebuildBase();       // m_baseImage = crop edit applied to oriented
     void showBase();          // push the (color) base image to the viewer
     void persistManifest();   // save the manifest for this image's path
@@ -78,7 +79,8 @@ private:
 
     // Pixmap buffers, all derived from the manifest applied to the disk image.
     QImage m_diskImage;      // image exactly as loaded from disk; never edited
-    QImage m_orientedImage;  // disk image with the orientation edit applied (crop base)
+    QImage m_uprightImage;   // disk image with the orientation edit applied (overlay base)
+    QImage m_orientedImage;  // upright image with the free rotation applied (crop base)
     QImage m_baseImage;      // oriented image with the crop edit applied (B&W source)
 
     QPixmap                 m_lastRenderPixmap;  // most recent rendered display image

@@ -229,9 +229,9 @@ void CropToolTest::firstCropEntry_noticeIsVisible() {
     viewer.show();
     QCoreApplication::processEvents();
 
-    QVERIFY(!viewer.cropNoticeVisible());
+    QVERIFY(!viewer.overlayNoticeVisible());
     viewer.setCropMode(true);
-    QVERIFY(viewer.cropNoticeVisible());
+    QVERIFY(viewer.overlayNoticeVisible());
 }
 
 void CropToolTest::secondCropEntry_noticeIsNotVisible() {
@@ -241,11 +241,11 @@ void CropToolTest::secondCropEntry_noticeIsNotVisible() {
     QCoreApplication::processEvents();
 
     viewer.setCropMode(true);
-    QVERIFY(viewer.cropNoticeVisible());
+    QVERIFY(viewer.overlayNoticeVisible());
     viewer.setCropMode(false);
 
     viewer.setCropMode(true);
-    QVERIFY(!viewer.cropNoticeVisible());
+    QVERIFY(!viewer.overlayNoticeVisible());
 }
 
 void CropToolTest::doubleClickInCropRect_dismissesNotice() {
@@ -255,12 +255,12 @@ void CropToolTest::doubleClickInCropRect_dismissesNotice() {
     QCoreApplication::processEvents();
 
     viewer.setCropMode(true);
-    QVERIFY(viewer.cropNoticeVisible());
+    QVERIFY(viewer.overlayNoticeVisible());
 
     QPoint vp = viewer.mapFromScene(QPointF(100, 75));
     QTest::mouseDClick(viewer.viewport(), Qt::LeftButton, Qt::NoModifier, vp);
 
-    QVERIFY(!viewer.cropNoticeVisible());
+    QVERIFY(!viewer.overlayNoticeVisible());
 }
 
 // The corner handles have a generous catch radius, so the user can grab a

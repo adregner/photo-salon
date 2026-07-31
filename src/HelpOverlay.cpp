@@ -51,7 +51,7 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "  X    Crop mode\n"
         "  W    Black & white conversion\n"
         "  \\    Compare original color image\n"
-        "  R    Rotate 90° clockwise\n"
+        "  R    Rotate mode (drag a corner; 90° turns in the panel)\n"
         "  H    Flip horizontal\n"
         "  V    Flip vertical\n"
         "  S    Save current image\n"
@@ -73,7 +73,8 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "\n"
         "Mouse Controls\n"
         "\n"
-        "  Double Click    Reset crop (in crop-mode) / reset an adjustment slider\n"
+        "  Drag a corner   Rotate the image (in rotate-mode)\n"
+        "  Double Click    Reset crop / rotation (in those modes) / an adjustment slider\n"
         "  Scroll wheel    Zoom (anchored to cursor)");
 
     // Left-align at 1/3 width so monospace columns stay intact; center vertically

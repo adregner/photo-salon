@@ -2,8 +2,8 @@
 
 C++ / Qt6 desktop image viewer for in-person photography salons. Cross-platform:
 Linux, macOS (primary dev/test), and Windows 10/11. Single-window viewer with
-non-destructive edits (orientation, crop, light/level & colour adjustments, hue-selective B&W)
-and a metadata overlay.
+non-destructive edits (orientation, free-angle rotation, crop, light/level & colour
+adjustments, hue-selective B&W) and a metadata overlay.
 
 ## Session start — do this first, every session
 
@@ -65,6 +65,16 @@ is in **`doc/ARCHITECTURE.md`**. The essentials:
   **focused** pane and wires each pane's viewer signals to handlers.
 - **`main.cpp`** — CLI parsing only. An empty path is valid (idle state).
 
+### Crop & rotate: one overlay, two modes
+
+`X` (crop) and `R` (rotate) are two modes of a single selection overlay in `ImageViewer`
+(`OverlayMode::{None,Crop,Rotate}`). Both put the same box over the full, uncropped image;
+crop drags the box, rotate turns the image under it (corner drag + the `RotatePanel`'s
+lossless 90° buttons and straighten slider). Switching `X`⇄`R` applies nothing — only
+leaving the overlay does, via `MainWindow::commitOverlay()`, which writes both the
+`RotateEdit` and the `CropEdit`. `RotateGeometry` keeps the selection inside the tilted
+photograph's bounds, so a rotated result is never left with blank corners.
+
 ### Side-by-side compare
 
 `Shift+O` opens a second image into a second `ImagePane` beside the first, with a minimal
@@ -79,21 +89,22 @@ off the focused viewer's `viewChanged` signal.
 All modifications live in one ordered **`EditManifest`** owned by the (focused) `ImagePane`.
 It is the single source of truth for *what* is applied and *in what order*. Each modification is an
 **`ImageEdit`** — a common interface (`apply(QImage)` on an in-memory buffer, plus JSON
-(de)serialization) implemented by `OrientationEdit`, `CropEdit`, `AdjustEdit`, `ColorEdit`,
-and `BwEdit`. The manifest
+(de)serialization) implemented by `OrientationEdit`, `RotateEdit`, `CropEdit`, `AdjustEdit`,
+`ColorEdit`, and `BwEdit`. The manifest
 is **persisted in `QSettings`, keyed by the image's absolute path**, so reopening the same
 file re-applies the same edits (`EditManifest::saveFor` / `loadFor`).
 
 ### Display pipeline & pixmap state
 
 Features that change the screen run in one ordered pipeline owned by each `ImagePane`:
-**disk → orientation → crop → adjust → color → B&W → display**. The buffers are **`QImage`** (so edits run
-off the GUI thread), each *derived from the manifest* applied to the previous stage:
+**disk → orientation → rotate → crop → adjust → color → B&W → display**. The buffers are **`QImage`**
+(so edits run off the GUI thread), each *derived from the manifest* applied to the previous stage:
 
 | Field | Meaning |
 |---|---|
 | `m_diskImage` | Image exactly as loaded (EXIF-oriented at load). Never touched by edits. |
-| `m_orientedImage` | `m_diskImage` with the manifest's `OrientationEdit` applied. The full-size **crop base**. |
+| `m_uprightImage` | `m_diskImage` with the manifest's `OrientationEdit` (quarter turns/flips) applied. The **crop/rotate overlay base**. |
+| `m_orientedImage` | `m_uprightImage` with the manifest's `RotateEdit` (free angle) applied. The full-size **crop base**. |
 | `m_baseImage` | `m_orientedImage` with the manifest's `CropEdit` applied. The **B&W source**. |
 
 **New display-transform features must:** add an `ImageEdit` subclass, store its settings in
@@ -119,6 +130,7 @@ the main thread (`QtConcurrent` + `QFutureWatcher`), like B&W.
 |---|---|
 | Architecture, pipeline, event routing, feature internals | `doc/ARCHITECTURE.md` |
 | Edit manifest, `ImageEdit` interface, persistence | `src/EditManifest.h`, `src/ImageEdit.h`, `doc/ARCHITECTURE.md` |
+| Rotation geometry (tilted bounds, inscribed crop) | `src/RotateGeometry.h`, `src/RotatePanel.h` |
 | Build system, deps, tests, packaging, CI release | `doc/BUILD.md` |
 | Windows cross-compile & code signing | `doc/WINDOWS.md` |
 | End-user install / run / packaging | `README.md` |

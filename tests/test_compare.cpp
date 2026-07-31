@@ -7,11 +7,13 @@
 #include <QImage>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include <QToolButton>
 #include "CompareTabBar.h"
 #include "ImageViewer.h"
 #include "MainWindow.h"
+#include "RotatePanel.h"
 
 class CompareTest : public QObject {
     Q_OBJECT
@@ -131,7 +133,9 @@ void CompareTest::editsActOnFocusedImageOnly() {
     QVERIFY(a && b);
 
     // Rotate the focused image (b). Only b's manifest should carry the edit.
-    QTest::keyClick(b, Qt::Key_R);
+    QTest::keyClick(b, Qt::Key_R);                    // rotate mode
+    w.rotatePanel()->rotateRightButton()->click();    // quarter turn
+    QTest::keyClick(b, Qt::Key_R);                    // leave rotate mode
     QCoreApplication::processEvents();
     QVERIFY(w.manifest().orientation() != nullptr);   // focused (b)
 

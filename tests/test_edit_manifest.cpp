@@ -7,10 +7,12 @@
 #include <QImage>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include "EditManifest.h"
 #include "ImageEdit.h"
 #include "MainWindow.h"
+#include "RotatePanel.h"
 #include "ImageViewer.h"
 
 static QString dims(int w, int h) { return QString("%1 × %2").arg(w).arg(h); }
@@ -213,7 +215,11 @@ void EditManifestTest::persistence_reappliesSavedEditsOnReopen() {
         ImageViewer *v = viewerOf(w);
         QVERIFY(v);
 
-        QTest::keyClick(v, Qt::Key_R);                 // 90° rotation → oriented 150x200
+        // Rotate mode, then a quarter turn from its panel → oriented 150x200.
+        QTest::keyClick(v, Qt::Key_R);
+        w.rotatePanel()->rotateRightButton()->click();
+        QTest::keyClick(v, Qt::Key_R);                 // leave rotate mode
+
         v->setCropMode(true);
         v->setCropRect(QRectF(10, 20, 60, 100));       // crop in oriented space
         v->setCropMode(false);

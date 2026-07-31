@@ -16,6 +16,7 @@ class HelpOverlay;
 class ExitOverlay;
 class ImagePane;
 class ImageViewer;
+class RotatePanel;
 class QHBoxLayout;
 class QResizeEvent;
 class QTimer;
@@ -42,6 +43,10 @@ public:
     // Public for tests.
     ImageViewer *activeViewer() const;
 
+    // The rotate-mode panel, which owns the two lossless quarter-turn buttons.
+    // Public so the quarter turns can be driven in tests.
+    RotatePanel *rotatePanel() const { return m_rotatePanel; }
+
     // True while two images are open side by side.
     bool compareMode() const { return m_panes.size() > 1; }
 
@@ -55,7 +60,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
-    enum class OrientationStep { RotateCW, FlipH, FlipV };
+    enum class OrientationStep { RotateCW, RotateCCW, FlipH, FlipV };
 
     ImagePane *focused() const;
 
@@ -76,7 +81,8 @@ private:
     void onBwPanelRequested();
     void toggleCompare();
     void deactivateBw();
-    void onCropModeChanged(ImagePane *pane, bool cropActive);
+    void onOverlayModeChanged(ImagePane *pane);   // crop/rotate opened or closed
+    void commitOverlay(ImagePane *pane);          // fold the overlay into the manifest
     void applyOrientationStep(OrientationStep step);
     void toggleExif();
     void showColorPicker();
@@ -110,6 +116,7 @@ private:
 
     BwPanel     *m_bwPanel     = nullptr;
     AdjustPanel *m_adjustPanel = nullptr;
+    RotatePanel *m_rotatePanel = nullptr;
 
     QTimer *m_exitDebounce = nullptr;
 };

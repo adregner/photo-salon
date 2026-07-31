@@ -22,8 +22,8 @@ ImagePane::ImagePane(const QString &imagePath, QWidget *viewerParent)
     m_renderWatcher = new QFutureWatcher<QImage>(this);
     connect(m_renderWatcher, &QFutureWatcher<QImage>::finished, this, [this]() {
         m_lastRenderPixmap = QPixmap::fromImage(m_renderWatcher->result());
-        // Don't clobber the crop UI, show a stale result, or override compare.
-        if (hasDisplayEdits() && !m_comparing && !m_viewer->cropMode())
+        // Don't clobber the crop/rotate UI, show a stale result, or override compare.
+        if (hasDisplayEdits() && !m_comparing && !m_viewer->overlayActive())
             m_viewer->setDisplayPixmap(m_lastRenderPixmap);
     });
 
@@ -70,9 +70,16 @@ void ImagePane::reloadFromDisk() {
 
 void ImagePane::rebuildOriented() {
     const OrientationEdit *o = m_manifest.orientation();
-    m_orientedImage = o ? o->apply(m_diskImage) : m_diskImage;
-    // The crop UI always works against the full oriented original.
-    m_viewer->setBasePixmapForCrop(QPixmap::fromImage(m_orientedImage));
+    m_uprightImage = o ? o->apply(m_diskImage) : m_diskImage;
+
+    const RotateEdit *r = m_manifest.rotate();
+    m_orientedImage = r ? r->apply(m_uprightImage) : m_uprightImage;
+
+    // The crop/rotate overlay works against the *upright* original and applies
+    // the free angle itself, so dragging the angle stays interactive; it needs
+    // the angle to do that.
+    m_viewer->setBasePixmapForCrop(QPixmap::fromImage(m_uprightImage));
+    m_viewer->setRotateAngle(r ? r->angle() : 0.0);
 }
 
 void ImagePane::rebuildBase() {
@@ -102,7 +109,7 @@ void ImagePane::scheduleRender() {
         showBase();
         return;
     }
-    if (m_viewer->cropMode()) return;   // crop UI owns the display while active
+    if (m_viewer->overlayActive()) return;   // the crop/rotate UI owns the display
     m_renderDebounce->start();
 }
 
@@ -137,8 +144,8 @@ ExifReader::ExifData ImagePane::stateData() const {
         QSize orig = m_diskImage.size();
         state["Dimensions"] = QString("%1 × %2").arg(orig.width()).arg(orig.height());
     }
-    // Current dimensions, shown only once an edit changes them — a crop, or a
-    // 90°/270° rotation that swaps width and height.
+    // Current dimensions, shown only once an edit changes them — a crop, a free
+    // rotation, or a 90°/270° turn that swaps width and height.
     if (!m_diskImage.isNull() && !m_baseImage.isNull()
         && m_baseImage.size() != m_diskImage.size()) {
         QSize cur = m_baseImage.size();

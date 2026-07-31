@@ -44,7 +44,7 @@ public:
 };
 
 // Canonical pipeline position of an edit type
-// (disk → orientation → crop → adjust → color → B&W).
+// (disk → orientation → rotate → crop → adjust → color → B&W).
 // EditManifest uses this to keep its ordered list stable; lower applies first.
 int editOrderIndex(const QString &type);
 
@@ -71,6 +71,7 @@ public:
     // Compose an incremental step on top of the current orientation, in the same
     // order the user applied it (current first, then the new step).
     void rotateClockwise();
+    void rotateCounterClockwise();
     void flipHorizontal();
     void flipVertical();
 
@@ -85,6 +86,35 @@ private:
     int  m_rotation = 0;          // 0/90/180/270, descriptive (summary only)
     bool m_flippedH = false;      // descriptive (summary only)
     bool m_flippedV = false;      // descriptive (summary only)
+};
+
+// ---------------------------------------------------------------------------
+// RotateEdit — free-angle rotation, for straightening a tilted horizon. Applies
+// after the lossless quarter turns and flips and before the crop, so the crop
+// selection is expressed in the rotated frame and can be held inside the tilted
+// original's bounds (see RotateGeometry). Rotating grows the buffer to the
+// bounding box of the tilted image and leaves blank corners; those corners are
+// always outside the crop, so the result stays a full rectangular photograph.
+//
+// The angle is limited to the straightening range (±45°); whole quarter turns
+// belong in OrientationEdit, and the two together reach any angle.
+// ---------------------------------------------------------------------------
+class RotateEdit : public ImageEdit {
+public:
+    QString type() const override { return QStringLiteral("rotate"); }
+    QImage  apply(const QImage &in) const override;
+    std::unique_ptr<ImageEdit> clone() const override;
+    QJsonObject toJson() const override;
+    void fromJson(const QJsonObject &obj) override;
+    QString summary() const override;
+
+    double angle() const { return m_angle; }
+    void   setAngle(double degrees);   // clamped to the straightening range
+    // True when the angle is too small to change any pixel (nothing to apply).
+    bool   isIdentity() const;
+
+private:
+    double m_angle = 0.0;   // degrees, positive turns the image clockwise
 };
 
 // ---------------------------------------------------------------------------
