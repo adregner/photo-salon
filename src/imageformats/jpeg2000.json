@@ -1,0 +1,4 @@
+{
+    "Keys": [ "jpf", "jpx", "jp2", "j2k", "j2c" ],
+    "MimeTypes": [ "image/jpx", "image/jpx", "image/jp2", "image/j2c", "image/j2c" ]
+}

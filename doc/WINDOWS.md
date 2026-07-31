@@ -91,6 +91,70 @@ third-party libs by default; enabling them needs their sources fetched separatel
 image-format plugins add no new Windows system-DLL dependencies beyond what `Qt6Gui`
 already pulls in, so no new `windows/sdk/lib/um/` import libs are required.
 
+## Image codec libraries (HEIC / JPEG 2000) — **not yet available on Windows**
+
+HEIC and the JPEG 2000 family are decoded by our own static Qt image plugins in
+`src/imageformats/`, backed by **libheif** and **OpenJPEG** (see
+`doc/ARCHITECTURE.md` § Image format support). Both are found at configure time and
+are optional: the Windows cross-build currently finds neither, prints a CMake warning,
+and produces an `.exe` that works exactly as before **minus those two formats**. macOS
+and Linux get them from Homebrew/apt.
+
+They can't come from the host: `pkg-config` is deliberately not consulted when
+cross-compiling, or a Windows link would pick up the host's Linux `.so`s. So the
+libraries have to be **built on a Windows machine with MSVC** and vendored in, the same
+way the static Qt bundle is.
+
+### What to build and bring back
+
+All of it x64, **Release**, static (`-DBUILD_SHARED_LIBS=OFF`), and — to match the
+static Qt bundle, which links the CRT dynamically — with
+`-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL` (`/MD`). Mixing `/MT` and `/MD` in one
+link is what produces the classic duplicate-symbol / heap-mismatch failures.
+
+| # | Library | Artifacts needed | Notes |
+|---|---|---|---|
+| 1 | [**libheif**](https://github.com/strukturag/libheif) (≥ 1.17) | `heif.lib`, headers `libheif/heif.h` + `libheif/heif_version.h` | Configure with `-DWITH_EXAMPLES=OFF -DENABLE_PLUGIN_LOADING=OFF` so the HEVC decoder is linked **in** rather than `dlopen`ed at runtime — a plugin DLL would have to be shipped and found next to the `.exe`. |
+| 2 | [**libde265**](https://github.com/strukturag/libde265) (≥ 1.0.15) | `libde265.lib` | The HEVC decoder libheif needs to decode HEIC at all. Build it first and point libheif's configure at it. |
+| 3 | [**OpenJPEG**](https://github.com/uclouvain/openjpeg) (≥ 2.5) | `openjp2.lib`, headers `openjpeg.h`, `opj_config.h`, `opj_stdint.h` | Configure with `-DBUILD_CODEC=OFF` — only the library is needed, not `opj_compress` and friends. |
+| 4 | Windows SDK import libs | *expected: none new* | libheif, libde265 and OpenJPEG use only the CRT and `kernel32`, which are already vendored. Confirm on the built libs with `dumpbin /directives *.lib \| findstr /i defaultlib`; if a `.lib` that isn't already in `windows/sdk/lib/um/` shows up, copy it in per `doc/BUILD.md` § Windows SDK import libraries. |
+
+AVIF support (libaom/dav1d) is **not** required — it is a separate libheif back-end,
+and the goal here is HEIC.
+
+### Where to put them
+
+The cross-compile toolchain already searches `windows/codecs/x64` (both as a
+`CMAKE_PREFIX_PATH` and a find-root), so the vendored tree just needs the standard
+layout:
+
+```
+windows/
+  codecs/
+    x64/
+      include/
+        libheif/heif.h
+        libheif/heif_version.h
+        openjpeg.h
+        opj_config.h
+        opj_stdint.h
+      lib/
+        heif.lib
+        libde265.lib
+        openjp2.lib
+```
+
+With that in place `./build-windows.sh` picks both up with no further changes — the
+CMake warnings disappear and the plugins are compiled into the `.exe`. If a header ends
+up under a versioned subdirectory (OpenJPEG's own install uses `include/openjpeg-2.5/`),
+either flatten it into `include/` or pass
+`-DOPENJPEG_INCLUDE_DIR=<path> -DOPENJPEG_LIBRARY=<path/openjp2.lib>` (and the matching
+`HEIF_*` variables) to CMake.
+
+Ship the tree the same way as the Qt bundle: tar it up as `codecs.tar.gz`, upload to
+`s3://photo-salon/_build/windows/`, and add a `fetch` line for it in
+`fetch-windows-deps.sh` next to the existing ones.
+
 ### Bundle upload
 
 Re-tar from the directory *above* `qt-6.11/` so the archive root stays `qt-6.11/x64/...`.

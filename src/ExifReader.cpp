@@ -4,6 +4,9 @@
 #include <QFileInfo>
 #include <QImageReader>
 #include <cmath>
+#ifdef PHOTO_SALON_HAVE_HEIF
+#include "HeifPlugin.h"
+#endif
 
 namespace ExifReader {
 
@@ -110,8 +113,22 @@ ExifData read(const QString &filePath) {
     file.close();
 
     easyexif::EXIFInfo exif;
-    if (exif.parseFrom(reinterpret_cast<const unsigned char *>(raw.constData()),
-                       static_cast<unsigned>(raw.size())) != PARSE_EXIF_SUCCESS)
+    bool parsed = exif.parseFrom(reinterpret_cast<const unsigned char *>(raw.constData()),
+                                 static_cast<unsigned>(raw.size())) == PARSE_EXIF_SUCCESS;
+
+#ifdef PHOTO_SALON_HAVE_HEIF
+    // HEIF keeps EXIF in a metadata item instead of a JPEG APP1 segment, so
+    // easyexif can't find it in the raw file — hand it the extracted segment.
+    if (!parsed) {
+        const QByteArray segment = heifExifSegment(filePath);
+        if (!segment.isEmpty())
+            parsed = exif.parseFromEXIFSegment(
+                         reinterpret_cast<const unsigned char *>(segment.constData()),
+                         static_cast<unsigned>(segment.size())) == PARSE_EXIF_SUCCESS;
+    }
+#endif
+
+    if (!parsed)
         return data;
 
     auto qstr = [](const std::string &s) {

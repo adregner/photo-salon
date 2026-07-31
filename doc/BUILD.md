@@ -28,6 +28,31 @@ Platform-specific sources:
 | **easyexif** | root `CMakeLists.txt` | commit `cd994a3…` | Single-file JPEG EXIF parser (`exif.cpp`). |
 | **exif-py samples** | `tests/CMakeLists.txt` | commit `2adb9d1…` | Real-camera JPEGs for `test_exif_reader`; path passed as `EXIF_SAMPLES_DIR`. |
 
+### Optional system dependencies (image codecs)
+
+Two decoders Qt doesn't ship are built from `src/imageformats/` as static Qt image
+plugins (see `doc/ARCHITECTURE.md` § Image format support):
+
+| Library | Adds | Install |
+|---|---|---|
+| **libheif** | HEIF/HEIC | `brew install libheif` · `apt install libheif-dev` |
+| **OpenJPEG** | JPEG 2000 — `.jpf` `.jpx` `.jp2` `.j2k` `.j2c` | `brew install openjpeg` · `apt install libopenjp2-7-dev` |
+
+Both are optional. `photo_salon_find_codec()` in the root `CMakeLists.txt` looks for each
+with pkg-config, then with a plain header/library search; a miss prints a warning, skips
+that plugin, and leaves the corresponding `PHOTO_SALON_HAVE_HEIF` /
+`PHOTO_SALON_HAVE_JPEG2000` compile definition undefined — the build still succeeds, just
+without that format. Point the search at a specific build by passing e.g.
+`-DHEIF_INCLUDE_DIR=… -DHEIF_LIBRARY=…`.
+
+pkg-config is skipped while cross-compiling, so the Windows build never links the host's
+libraries — which is why it has no HEIC/JPEG 2000 support yet. `doc/WINDOWS.md`
+§ Image codec libraries itemizes what has to be built on a Windows machine to finish that.
+
+On macOS `macdeployqt` copies both dylibs (and their transitive dependencies, such as
+`libde265`) into `photo-salon.app/Contents/Frameworks` during `./bundle-macos.sh`, so the
+released bundle is self-contained.
+
 ## Building
 
 ```bash
@@ -63,8 +88,13 @@ QT_QPA_PLATFORM=offscreen ./_build/tests/test_crop_tool
 
 Current suites (in `tests/`): `test_zoom`, `test_help_overlay`, `test_image_formats`,
 `test_folder_navigation`, `test_open_folder`, `test_fullscreen`, `test_background_color`,
-`test_crop_tool`, `test_bw_converter`, `test_exif_reader`, `test_external_launch`. New tests link
-`photo-salon-lib` + `Qt6::Test` and should set the offscreen platform property.
+`test_crop_tool`, `test_bw_converter`, `test_exif_reader`, `test_external_launch`,
+`test_extra_formats`. New tests link `photo-salon-lib` + `Qt6::Test` and should set the
+offscreen platform property.
+
+`test_extra_formats` covers the HEIF / JPEG 2000 plugins against the small committed
+fixtures in `tests/resources/` (see the README there for how each was generated); its
+cases skip themselves when the matching codec wasn't found at configure time.
 
 ## Packaging
 

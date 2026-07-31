@@ -11,6 +11,89 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent Network)
 qt_standard_project_setup()
 enable_testing()
 
+# --- Extra image-format decoders -------------------------------------------
+# Qt's own image plugins cover JPEG/PNG/TIFF/WebP/… but not HEIF/HEIC or the
+# JPEG 2000 family (.jpf/.jpx/.jp2). Those are decoded by libheif and OpenJPEG,
+# wrapped in the static Qt image plugins under src/imageformats/. CMake
+# auto-imports static plugins into everything that links photo-salon-lib, so
+# QImageReader — and every caller of supportedExtensions() — gains the formats
+# with no call-site changes.
+#
+# Both are optional: a missing library drops just that format, with a warning.
+find_package(PkgConfig QUIET)
+
+# Locates an optional codec — pkg-config first, then a plain header/library
+# search. Sets <prefix>_FOUND / _INCLUDE_DIRS / _LIBRARIES / _LIBRARY_DIRS in
+# the caller's scope. Any extra arguments are header search path suffixes.
+# Pre-setting <prefix>_INCLUDE_DIR and <prefix>_LIBRARY on the command line
+# points it at a specific build — the only way in when cross-compiling.
+function(photo_salon_find_codec prefix pc_module header library)
+    # pkg-config answers for the host, so it must not be consulted when
+    # cross-compiling: it would hand a Windows link the host's Linux libraries.
+    if(PkgConfig_FOUND AND NOT CMAKE_CROSSCOMPILING)
+        pkg_check_modules(PC_${prefix} QUIET ${pc_module})
+    endif()
+    if(PC_${prefix}_FOUND)
+        set(${prefix}_FOUND        TRUE                        PARENT_SCOPE)
+        set(${prefix}_INCLUDE_DIRS "${PC_${prefix}_INCLUDE_DIRS}" PARENT_SCOPE)
+        set(${prefix}_LIBRARIES    "${PC_${prefix}_LIBRARIES}"    PARENT_SCOPE)
+        set(${prefix}_LIBRARY_DIRS "${PC_${prefix}_LIBRARY_DIRS}" PARENT_SCOPE)
+        return()
+    endif()
+    find_path(${prefix}_INCLUDE_DIR NAMES ${header} PATH_SUFFIXES ${ARGN})
+    find_library(${prefix}_LIBRARY NAMES ${library})
+    if(${prefix}_INCLUDE_DIR AND ${prefix}_LIBRARY)
+        set(${prefix}_FOUND        TRUE                      PARENT_SCOPE)
+        set(${prefix}_INCLUDE_DIRS "${${prefix}_INCLUDE_DIR}" PARENT_SCOPE)
+        set(${prefix}_LIBRARIES    "${${prefix}_LIBRARY}"     PARENT_SCOPE)
+        set(${prefix}_LIBRARY_DIRS ""                         PARENT_SCOPE)
+    else()
+        set(${prefix}_FOUND FALSE PARENT_SCOPE)
+    endif()
+endfunction()
+
+photo_salon_find_codec(HEIF libheif libheif/heif.h heif)
+photo_salon_find_codec(OPENJPEG libopenjp2 openjpeg.h openjp2
+    openjpeg-2.5 openjpeg-2.4 openjpeg-2.3 openjpeg)
+
+if(HEIF_FOUND)
+    qt_add_plugin(photo-salon-heif STATIC CLASS_NAME HeifPlugin)
+    target_sources(photo-salon-heif PRIVATE
+        src/imageformats/HeifPlugin.cpp
+        src/imageformats/HeifPlugin.h
+    )
+    target_include_directories(photo-salon-heif
+        PUBLIC  src/imageformats
+        PRIVATE ${HEIF_INCLUDE_DIRS})
+    target_link_directories(photo-salon-heif PRIVATE ${HEIF_LIBRARY_DIRS})
+    target_link_libraries(photo-salon-heif PUBLIC Qt6::Gui PRIVATE ${HEIF_LIBRARIES})
+else()
+    message(WARNING
+        "libheif not found — HEIF/HEIC files will not open.\n"
+        "  macOS:  brew install libheif\n"
+        "  Linux:  apt install libheif-dev  (or libheif-devel)\n"
+        "  Windows: see doc/WINDOWS.md § Image codec libraries")
+endif()
+
+if(OPENJPEG_FOUND)
+    qt_add_plugin(photo-salon-jpeg2000 STATIC CLASS_NAME Jpeg2000Plugin)
+    target_sources(photo-salon-jpeg2000 PRIVATE
+        src/imageformats/Jpeg2000Plugin.cpp
+        src/imageformats/Jpeg2000Plugin.h
+    )
+    target_include_directories(photo-salon-jpeg2000
+        PUBLIC  src/imageformats
+        PRIVATE ${OPENJPEG_INCLUDE_DIRS})
+    target_link_directories(photo-salon-jpeg2000 PRIVATE ${OPENJPEG_LIBRARY_DIRS})
+    target_link_libraries(photo-salon-jpeg2000 PUBLIC Qt6::Gui PRIVATE ${OPENJPEG_LIBRARIES})
+else()
+    message(WARNING
+        "OpenJPEG not found — JPEG 2000 (.jpf/.jpx/.jp2) files will not open.\n"
+        "  macOS:  brew install openjpeg\n"
+        "  Linux:  apt install libopenjp2-7-dev  (or openjpeg2-devel)\n"
+        "  Windows: see doc/WINDOWS.md § Image codec libraries")
+endif()
+
 # easyexif — single-file JPEG EXIF parser, no external dependencies
 include(FetchContent)
 FetchContent_Declare(easyexif
@@ -74,6 +157,17 @@ endif()
 target_include_directories(photo-salon-lib PUBLIC src)
 target_include_directories(photo-salon-lib PRIVATE ${easyexif_SOURCE_DIR})
 target_link_libraries(photo-salon-lib PUBLIC Qt6::Widgets Qt6::Concurrent Qt6::Network)
+
+# Linking the static image plugins here pulls their auto-generated Q_IMPORT_PLUGIN
+# initializers into the app and every test binary.
+if(HEIF_FOUND)
+    target_link_libraries(photo-salon-lib PUBLIC photo-salon-heif)
+    target_compile_definitions(photo-salon-lib PUBLIC PHOTO_SALON_HAVE_HEIF)
+endif()
+if(OPENJPEG_FOUND)
+    target_link_libraries(photo-salon-lib PUBLIC photo-salon-jpeg2000)
+    target_compile_definitions(photo-salon-lib PUBLIC PHOTO_SALON_HAVE_JPEG2000)
+endif()
 
 qt_add_executable(photo-salon src/main.cpp)
 target_include_directories(photo-salon PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
