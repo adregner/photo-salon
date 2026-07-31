@@ -35,8 +35,13 @@ plugins (see `doc/ARCHITECTURE.md` § Image format support):
 
 | Library | Adds | Install |
 |---|---|---|
-| **libheif** | HEIF/HEIC | `brew install libheif` · `apt install libheif-dev` |
+| **libheif** | HEIF/HEIC | `brew install libheif` · `apt install libheif-dev libheif-plugin-libde265` |
 | **OpenJPEG** | JPEG 2000 — `.jpf` `.jpx` `.jp2` `.j2k` `.j2c` | `brew install openjpeg` · `apt install libopenjp2-7-dev` |
+
+On Debian/Ubuntu libheif's HEVC decoder is a *separate* package it `dlopen`s at runtime
+(`libheif-plugin-libde265`). Without it a HEIC file is recognised — `QImageReader::size()`
+even works — but decoding fails; the handler logs libheif's reason. Homebrew's libheif
+links the decoder in, so macOS needs nothing extra.
 
 Both are optional. `photo_salon_find_codec()` in the root `CMakeLists.txt` looks for each
 with pkg-config, then with a plain header/library search; a miss prints a warning, skips

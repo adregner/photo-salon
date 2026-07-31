@@ -9,11 +9,13 @@ A cross-platform minimalistic desktop photo viewing application to facilitate in
 CMake and a C++ compiler are required. Qt 6.11+ will be fetched automatically by the build script if the system version is too old.
 
 ```bash
-sudo apt install cmake g++ libheif-dev libopenjp2-7-dev
+sudo apt install cmake g++ libheif-dev libheif-plugin-libde265 libopenjp2-7-dev
 ```
 
 `libheif` and `OpenJPEG` add HEIC and JPEG 2000 (`.jpf`) support. They are optional —
-without them the build succeeds and simply cannot open those two formats.
+without them the build succeeds and simply cannot open those two formats. Debian and
+Ubuntu split libheif's HEVC decoder into `libheif-plugin-libde265`, which is loaded at
+runtime; without it HEIC files are recognised but fail to decode.
 
 ### macOS
 

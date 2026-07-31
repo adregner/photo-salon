@@ -23,30 +23,33 @@ enable_testing()
 find_package(PkgConfig QUIET)
 
 # Locates an optional codec — pkg-config first, then a plain header/library
-# search. Sets <prefix>_FOUND / _INCLUDE_DIRS / _LIBRARIES / _LIBRARY_DIRS in
-# the caller's scope. Any extra arguments are header search path suffixes.
-# Pre-setting <prefix>_INCLUDE_DIR and <prefix>_LIBRARY on the command line
-# points it at a specific build — the only way in when cross-compiling.
+# search. Sets <prefix>_FOUND / _INCLUDE_DIRS / _LIBRARIES in the caller's
+# scope, always as *absolute* library paths: the plugins are static libraries,
+# and a static target propagates its libraries to the final link but not its
+# link directories, so a bare `-lheif` would go looking in the default paths
+# only (fine on Linux, "library 'heif' not found" against Homebrew on macOS).
+# Any extra arguments are header search path suffixes. Pre-setting
+# <prefix>_INCLUDE_DIR and <prefix>_LIBRARY on the command line points it at a
+# specific build — the only way in when cross-compiling.
 function(photo_salon_find_codec prefix pc_module header library)
     # pkg-config answers for the host, so it must not be consulted when
     # cross-compiling: it would hand a Windows link the host's Linux libraries.
     if(PkgConfig_FOUND AND NOT CMAKE_CROSSCOMPILING)
         pkg_check_modules(PC_${prefix} QUIET ${pc_module})
     endif()
-    if(PC_${prefix}_FOUND)
-        set(${prefix}_FOUND        TRUE                        PARENT_SCOPE)
-        set(${prefix}_INCLUDE_DIRS "${PC_${prefix}_INCLUDE_DIRS}" PARENT_SCOPE)
-        set(${prefix}_LIBRARIES    "${PC_${prefix}_LIBRARIES}"    PARENT_SCOPE)
-        set(${prefix}_LIBRARY_DIRS "${PC_${prefix}_LIBRARY_DIRS}" PARENT_SCOPE)
+    # _LINK_LIBRARIES is pkg-config's library list already resolved to full paths.
+    if(PC_${prefix}_FOUND AND PC_${prefix}_LINK_LIBRARIES)
+        set(${prefix}_FOUND        TRUE                             PARENT_SCOPE)
+        set(${prefix}_INCLUDE_DIRS "${PC_${prefix}_INCLUDE_DIRS}"    PARENT_SCOPE)
+        set(${prefix}_LIBRARIES    "${PC_${prefix}_LINK_LIBRARIES}"  PARENT_SCOPE)
         return()
     endif()
     find_path(${prefix}_INCLUDE_DIR NAMES ${header} PATH_SUFFIXES ${ARGN})
-    find_library(${prefix}_LIBRARY NAMES ${library})
+    find_library(${prefix}_LIBRARY NAMES ${library} HINTS ${PC_${prefix}_LIBRARY_DIRS})
     if(${prefix}_INCLUDE_DIR AND ${prefix}_LIBRARY)
         set(${prefix}_FOUND        TRUE                      PARENT_SCOPE)
         set(${prefix}_INCLUDE_DIRS "${${prefix}_INCLUDE_DIR}" PARENT_SCOPE)
         set(${prefix}_LIBRARIES    "${${prefix}_LIBRARY}"     PARENT_SCOPE)
-        set(${prefix}_LIBRARY_DIRS ""                         PARENT_SCOPE)
     else()
         set(${prefix}_FOUND FALSE PARENT_SCOPE)
     endif()
@@ -65,7 +68,6 @@ if(HEIF_FOUND)
     target_include_directories(photo-salon-heif
         PUBLIC  src/imageformats
         PRIVATE ${HEIF_INCLUDE_DIRS})
-    target_link_directories(photo-salon-heif PRIVATE ${HEIF_LIBRARY_DIRS})
     target_link_libraries(photo-salon-heif PUBLIC Qt6::Gui PRIVATE ${HEIF_LIBRARIES})
 else()
     message(WARNING
@@ -84,7 +86,6 @@ if(OPENJPEG_FOUND)
     target_include_directories(photo-salon-jpeg2000
         PUBLIC  src/imageformats
         PRIVATE ${OPENJPEG_INCLUDE_DIRS})
-    target_link_directories(photo-salon-jpeg2000 PRIVATE ${OPENJPEG_LIBRARY_DIRS})
     target_link_libraries(photo-salon-jpeg2000 PUBLIC Qt6::Gui PRIVATE ${OPENJPEG_LIBRARIES})
 else()
     message(WARNING

@@ -112,7 +112,13 @@ bool HeifHandler::read(QImage *image) {
     // Default options apply the file's rotate/mirror/crop properties for us.
     const heif_error err = heif_decode_image(m_handle, &decoded.img,
                                              heif_colorspace_RGB, chroma, nullptr);
-    if (err.code != heif_error_Ok || !decoded.img) return false;
+    if (err.code != heif_error_Ok || !decoded.img) {
+        // Distro packages often split the HEVC decoder into a plugin libheif
+        // loads at runtime (Ubuntu: libheif-plugin-libde265). Without it the
+        // file parses but won't decode, so pass libheif's reason along.
+        qWarning("HEIF decode failed: %s", err.message ? err.message : "unknown error");
+        return false;
+    }
 
     const int width  = heif_image_get_width(decoded.img, heif_channel_interleaved);
     const int height = heif_image_get_height(decoded.img, heif_channel_interleaved);
