@@ -19,8 +19,29 @@ enable_testing()
 # QImageReader — and every caller of supportedExtensions() — gains the formats
 # with no call-site changes.
 #
-# Both are optional: a missing library drops just that format, with a warning.
+# Both are optional for development: a missing library drops just that format,
+# with a warning. Release builds turn that warning into a hard error — see
+# PHOTO_SALON_REQUIRE_CODECS below — so a published binary always opens every
+# format the app advertises.
 find_package(PkgConfig QUIET)
+
+# Set by the release pipelines (`./build` and `build-windows.sh` forward the
+# environment variable of the same name; `bundle-macos.sh` always sets it).
+option(PHOTO_SALON_REQUIRE_CODECS
+    "Fail configuration if an image codec is missing — for release builds" OFF)
+
+# Reports a codec that could not be found: fatal for a release build, a warning
+# otherwise, with the same install hints either way.
+function(photo_salon_codec_missing name formats hints)
+    set(reason "${name} not found — ${formats} files will not open.\n${hints}\
+  Windows: see doc/WINDOWS.md § Image codec libraries")
+    if(PHOTO_SALON_REQUIRE_CODECS)
+        message(FATAL_ERROR "${reason}\n"
+            "PHOTO_SALON_REQUIRE_CODECS is ON, so this build refuses to produce a "
+            "release binary without ${name}. Unset it to build without the format.")
+    endif()
+    message(WARNING "${reason}")
+endfunction()
 
 # Locates an optional codec — pkg-config first, then a plain header/library
 # search. Sets <prefix>_FOUND / _INCLUDE_DIRS / _LIBRARIES in the caller's
@@ -70,11 +91,8 @@ if(HEIF_FOUND)
         PRIVATE ${HEIF_INCLUDE_DIRS})
     target_link_libraries(photo-salon-heif PUBLIC Qt6::Gui PRIVATE ${HEIF_LIBRARIES})
 else()
-    message(WARNING
-        "libheif not found — HEIF/HEIC files will not open.\n"
-        "  macOS:  brew install libheif\n"
-        "  Linux:  apt install libheif-dev  (or libheif-devel)\n"
-        "  Windows: see doc/WINDOWS.md § Image codec libraries")
+    photo_salon_codec_missing(libheif "HEIF/HEIC"
+        "  macOS:  brew install libheif\n  Linux:  apt install libheif-dev  (or libheif-devel)\n")
 endif()
 
 if(OPENJPEG_FOUND)
@@ -88,11 +106,12 @@ if(OPENJPEG_FOUND)
         PRIVATE ${OPENJPEG_INCLUDE_DIRS})
     target_link_libraries(photo-salon-jpeg2000 PUBLIC Qt6::Gui PRIVATE ${OPENJPEG_LIBRARIES})
 else()
-    message(WARNING
-        "OpenJPEG not found — JPEG 2000 (.jpf/.jpx/.jp2) files will not open.\n"
-        "  macOS:  brew install openjpeg\n"
-        "  Linux:  apt install libopenjp2-7-dev  (or openjpeg2-devel)\n"
-        "  Windows: see doc/WINDOWS.md § Image codec libraries")
+    photo_salon_codec_missing(OpenJPEG "JPEG 2000 (.jpf/.jpx/.jp2)"
+        "  macOS:  brew install openjpeg\n  Linux:  apt install libopenjp2-7-dev  (or openjpeg2-devel)\n")
+endif()
+
+if(PHOTO_SALON_REQUIRE_CODECS)
+    message(STATUS "Release build: HEIF and JPEG 2000 codecs found, both plugins will ship")
 endif()
 
 # easyexif — single-file JPEG EXIF parser, no external dependencies

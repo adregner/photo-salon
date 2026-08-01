@@ -14,7 +14,16 @@ for dir in windows/msvc/lib windows/sdk/lib/ucrt windows/sdk/lib/um; do
   done
 done
 
-cmake -B _build_win --toolchain cmake/toolchains/windows-x86_64-clang-cl.cmake -DCMAKE_BUILD_TYPE=Release
+# Set PHOTO_SALON_REQUIRE_CODECS=1 (the release workflow does) to refuse to build
+# an .exe without the HEIC / JPEG 2000 plugins. That currently fails by design:
+# the MSVC codec libraries still have to be vendored into windows/codecs/x64 —
+# see doc/WINDOWS.md § Image codec libraries.
+REQUIRE_CODECS="OFF"
+[[ -n "${PHOTO_SALON_REQUIRE_CODECS:-}" && "${PHOTO_SALON_REQUIRE_CODECS}" != "0" ]] \
+    && REQUIRE_CODECS="ON"
+
+cmake -B _build_win --toolchain cmake/toolchains/windows-x86_64-clang-cl.cmake \
+  -DCMAKE_BUILD_TYPE=Release -DPHOTO_SALON_REQUIRE_CODECS="$REQUIRE_CODECS"
 cmake --build _build_win
 
 # Optional Authenticode signing.

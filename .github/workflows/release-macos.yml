@@ -26,6 +26,9 @@ jobs:
       contents: write
     env:
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      # Release binaries must ship the HEIC / JPEG 2000 plugins: a missing codec
+      # fails the CMake configure instead of silently dropping the format.
+      PHOTO_SALON_REQUIRE_CODECS: 1
 
     steps:
       - uses: actions/checkout@v4

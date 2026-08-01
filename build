@@ -89,7 +89,15 @@ if [ -z "$CMAKE_PREFIX" ]; then
     fi
 fi
 
-cmake -B _build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX"
+# PHOTO_SALON_REQUIRE_CODECS=1 makes a missing libheif/OpenJPEG fatal instead of a
+# warning. The release pipelines set it so no published binary can lack HEIC or
+# JPEG 2000; day-to-day builds leave it unset and the codecs stay optional.
+REQUIRE_CODECS="OFF"
+[[ -n "${PHOTO_SALON_REQUIRE_CODECS:-}" && "${PHOTO_SALON_REQUIRE_CODECS}" != "0" ]] \
+    && REQUIRE_CODECS="ON"
+
+cmake -B _build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX" \
+    -DPHOTO_SALON_REQUIRE_CODECS="$REQUIRE_CODECS"
 
 if [[ -n "${1:-}" ]]; then
   cd _build

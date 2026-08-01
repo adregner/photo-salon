@@ -105,6 +105,12 @@ cross-compiling, or a Windows link would pick up the host's Linux `.so`s. So the
 libraries have to be **built on a Windows machine with MSVC** and vendored in, the same
 way the static Qt bundle is.
 
+> **The Windows *release* workflow fails until that is done.** `release-windows.yml` sets
+> `PHOTO_SALON_REQUIRE_CODECS=1`, which makes a missing codec a fatal CMake error rather
+> than a warning, so no `.exe` can be published without HEIC and JPEG 2000 support. Plain
+> CI (`ci.yml`) still cross-compiles fine — it leaves the codecs optional — so the
+> Windows build stays verified in the meantime.
+
 ### What to build and bring back
 
 All of it x64, **Release**, static (`-DBUILD_SHARED_LIBS=OFF`), and — to match the

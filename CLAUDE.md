@@ -31,9 +31,12 @@ cd _build && ctest --output-on-failure   # run the test suite (headless)
 - Qt 6.11+ required. On Linux `./build` auto-fetches it; on macOS it prints
   `brew install qt` and exits.
 - Optional codecs: `libheif` + `OpenJPEG` (`brew install libheif openjpeg`,
-  `apt install libheif-dev libopenjp2-7-dev`). Missing ones only drop that format —
-  CMake warns and carries on. Not yet available for the Windows cross-build; see
-  `doc/WINDOWS.md`.
+  `apt install libheif-dev libheif-plugin-libde265 libopenjp2-7-dev`). Missing ones only
+  drop that format — CMake warns and carries on. Not yet available for the Windows
+  cross-build; see `doc/WINDOWS.md`.
+- **Release builds require them**: `PHOTO_SALON_REQUIRE_CODECS=1 ./build` (set by
+  `bundle-macos.sh` and both release workflows) turns a missing codec into a fatal
+  configure error, so no published binary lacks a format it advertises.
 - Tests are Qt Test binaries run with `QT_QPA_PLATFORM=offscreen` (CTest sets this).
 - Regenerate `compile_commands.json` when stale:
   `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .`

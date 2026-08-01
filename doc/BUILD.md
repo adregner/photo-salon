@@ -58,6 +58,40 @@ On macOS `macdeployqt` copies both dylibs (and their transitive dependencies, su
 `libde265`) into `photo-salon.app/Contents/Frameworks` during `./bundle-macos.sh`, so the
 released bundle is self-contained.
 
+#### Codecs are mandatory for release binaries
+
+Optional is fine while developing; a *published* binary must never be missing a format it
+advertises. `PHOTO_SALON_REQUIRE_CODECS` turns every "not found" warning above into a
+configure-time `FATAL_ERROR`:
+
+```bash
+PHOTO_SALON_REQUIRE_CODECS=1 ./build            # or ./build-windows.sh
+cmake -B _build -DPHOTO_SALON_REQUIRE_CODECS=ON # same thing, directly
+```
+
+Both `build` and `build-windows.sh` forward the environment variable to CMake, and it is
+set in three places, so no release path can skip it:
+
+| Where | What it covers |
+|---|---|
+| `bundle-macos.sh` | Sets it unconditionally — everything that script produces is a distributable |
+| `release-macos.yml` | Job-level `env:`, so the plain `./build` + `ctest` step is gated too |
+| `release-windows.yml` | Job-level `env:` on both the Linux test job and the cross-compile job |
+
+`bundle-macos.sh` then adds an artifact-level check after `macdeployqt`, because a
+successful configure only proves the codecs existed on the *build* machine: it verifies
+the app binary's `libheif` / `libopenjp2` references were rewritten to `@executable_path`
+(or `@rpath`) and that matching dylibs really landed in `Contents/Frameworks`. A bundle
+that would open HEICs on the build Mac and nowhere else fails there, before signing.
+
+The macOS and Linux release paths also run `ctest`, where `test_extra_formats` proves the
+plugins actually register in the built binary — the configure gate guarantees they were
+compiled in, that suite guarantees `QImageReader` can see them.
+
+**The Windows release job now fails on purpose** until the MSVC codec libraries are
+vendored — see `doc/WINDOWS.md` § Image codec libraries. That is the intended behaviour:
+better a red release job than an `.exe` published without HEIC and JPEG 2000.
+
 ## Building
 
 ```bash
