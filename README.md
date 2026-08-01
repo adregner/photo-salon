@@ -148,7 +148,10 @@ past the edge.
 ![Before and after straightening](doc/screenshots/rotate-before-after.png)
 
 The same limit applies in crop mode: on a tilted frame the box is held inside the dashed
-outline of the photograph rather than being allowed out over a blank corner.
+outline of the photograph rather than being allowed out over a blank corner. It behaves
+exactly as it does on an upright photo — dragging a corner moves only the two sides that
+meet it, dragging the box never changes its size, and either way it simply stops when it
+runs out of photograph.
 
 ![Crop held inside the tilted bounds](doc/screenshots/rotate-crop-bounds.png)
 

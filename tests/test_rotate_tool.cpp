@@ -79,6 +79,9 @@ private slots:
     void rotating_shrinksAnUntouchedSelectionToTheLargestThatFits();
     void rotating_keepsAPlacedSelectionInsideTheTiltedBounds();
     void doubleClickInRotateMode_resetsTheAngle();
+    void cropDragOnATiltedImage_movesOnlyTheDraggedCornersSides();
+    void cropDragOnATiltedImage_edgeHandleMovesThatSideAlone();
+    void movingTheCropBoxOnATiltedImage_neverChangesItsSize();
 
     // --- MainWindow commit ------------------------------------------------
     void leavingRotateMode_recordsRotateAndCropEdits();
@@ -387,6 +390,102 @@ void RotateToolTest::doubleClickInRotateMode_resetsTheAngle() {
                        viewer.mapFromScene(viewer.cropRect().center()));
     QCOMPARE(viewer.rotateAngle(), 0.0);
     QCOMPARE(viewer.cropRect(), QRectF(0, 0, 200, 150));
+}
+
+// Regression: a corner drag used to be fitted by scaling the whole box about
+// its centre, so hitting a diagonal edge dragged the *opposite* sides in too.
+// The anchor corner must not move at all.
+void RotateToolTest::cropDragOnATiltedImage_movesOnlyTheDraggedCornersSides() {
+    ImageViewer viewer(m_imagePath);   // 200x150
+    viewer.resize(700, 550);
+    viewer.show();
+    QCoreApplication::processEvents();
+
+    QTest::keyClick(&viewer, Qt::Key_R);
+    viewer.setRotateAngle(20.0);
+    QTest::keyClick(&viewer, Qt::Key_X);
+
+    // Start well inside the tilted frame, then haul the bottom-right corner far
+    // past the diagonal edge.
+    const QRectF bounds = viewer.rotatedBoundsRect();
+    QRectF start(0, 0, bounds.width() * 0.35, bounds.height() * 0.35);
+    start.moveCenter(bounds.center());
+    viewer.setCropRect(start);
+    QCOMPARE(viewer.cropRect(), start);
+
+    const QPoint from = viewer.mapFromScene(start.bottomRight());
+    dragOnViewport(viewer.viewport(), from, from + QPoint(400, 300));
+
+    const QRectF end = viewer.cropRect();
+    QCOMPARE(end.top(),  start.top());     // the anchored sides held still
+    QCOMPARE(end.left(), start.left());
+    QVERIFY(end.right()  > start.right()); // the dragged ones grew
+    QVERIFY(end.bottom() > start.bottom());
+    QVERIFY(RotateGeometry::contains(viewer.rotateBounds(), end));
+}
+
+void RotateToolTest::cropDragOnATiltedImage_edgeHandleMovesThatSideAlone() {
+    ImageViewer viewer(m_imagePath);   // 200x150
+    viewer.resize(700, 550);
+    viewer.show();
+    QCoreApplication::processEvents();
+
+    QTest::keyClick(&viewer, Qt::Key_R);
+    viewer.setRotateAngle(20.0);
+    QTest::keyClick(&viewer, Qt::Key_X);
+
+    const QRectF bounds = viewer.rotatedBoundsRect();
+    QRectF start(0, 0, bounds.width() * 0.35, bounds.height() * 0.35);
+    start.moveCenter(bounds.center());
+    viewer.setCropRect(start);
+
+    // Grab the right edge at its midpoint and pull it out past the tilt.
+    const QPoint from = viewer.mapFromScene(QPointF(start.right(), start.center().y()));
+    dragOnViewport(viewer.viewport(), from, from + QPoint(400, 0));
+
+    const QRectF end = viewer.cropRect();
+    QCOMPARE(end.top(),    start.top());
+    QCOMPARE(end.bottom(), start.bottom());
+    QCOMPARE(end.left(),   start.left());
+    QVERIFY(end.right() > start.right());
+    QVERIFY(RotateGeometry::contains(viewer.rotateBounds(), end));
+}
+
+// Regression: dragging the whole box into a diagonal edge used to shrink it (and
+// grow it back on the way out). A move is a move — the size is fixed, and the
+// box simply stops when it runs out of photograph.
+void RotateToolTest::movingTheCropBoxOnATiltedImage_neverChangesItsSize() {
+    ImageViewer viewer(m_imagePath);   // 200x150
+    viewer.resize(700, 550);
+    viewer.show();
+    QCoreApplication::processEvents();
+
+    QTest::keyClick(&viewer, Qt::Key_R);
+    viewer.setRotateAngle(20.0);
+    QTest::keyClick(&viewer, Qt::Key_X);
+
+    const QRectF bounds = viewer.rotatedBoundsRect();
+    QRectF start(0, 0, bounds.width() * 0.4, bounds.height() * 0.4);
+    start.moveCenter(bounds.center());
+    viewer.setCropRect(start);
+    QCOMPARE(viewer.cropRect().size(), start.size());
+
+    // Shove it hard into each corner of the tilted frame in turn.
+    const QPoint pushes[4] = {{-500, -400}, {500, -400}, {-500, 400}, {500, 400}};
+    for (const QPoint &push : pushes) {
+        viewer.setCropRect(start);
+        const QPoint from = viewer.mapFromScene(start.center());
+        dragOnViewport(viewer.viewport(), from, from + push);
+
+        const QRectF end = viewer.cropRect();
+        QVERIFY2(qAbs(end.width()  - start.width())  < 1e-6
+              && qAbs(end.height() - start.height()) < 1e-6,
+                 qPrintable(QStringLiteral("resized while moving: %1x%2 → %3x%4")
+                                .arg(start.width()).arg(start.height())
+                                .arg(end.width()).arg(end.height())));
+        QVERIFY(end.center() != start.center());   // it did actually move
+        QVERIFY(RotateGeometry::contains(viewer.rotateBounds(), end));
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -740,35 +740,37 @@ void ImageViewer::mouseMoveEvent(QMouseEvent *event) {
     }
 
     if ((event->buttons() & Qt::LeftButton) && m_activeHandle != CropHandle::None) {
-        QPointF scenePos = mapToScene(event->pos());
-        QPointF d = scenePos - m_dragStartScene;
-        QRectF imageRect = rotatedBoundsRect();
-        QRectF r = m_dragStartCropRect;
+        const QPointF delta = mapToScene(event->pos()) - m_dragStartScene;
+        const QRectF start = m_dragStartCropRect;
+        // The box may only ever cover the photograph itself, never the blank
+        // corners a rotation opened up. On an upright image this polygon is the
+        // image's own rectangle, so the same code clamps against its sides.
+        const QPolygonF bounds = rotateBounds();
+        QRectF r = start;
 
-        switch (m_activeHandle) {
-        case CropHandle::Move:
-            r.translate(d);
-            if (r.left()   < imageRect.left())   r.moveLeft(imageRect.left());
-            if (r.right()  > imageRect.right())  r.moveRight(imageRect.right());
-            if (r.top()    < imageRect.top())    r.moveTop(imageRect.top());
-            if (r.bottom() > imageRect.bottom()) r.moveBottom(imageRect.bottom());
-            break;
-        case CropHandle::TopLeft:     r.setTopLeft(r.topLeft() + d);         break;
-        case CropHandle::Top:         r.setTop(r.top() + d.y());              break;
-        case CropHandle::TopRight:    r.setTopRight(r.topRight() + d);        break;
-        case CropHandle::Left:        r.setLeft(r.left() + d.x());            break;
-        case CropHandle::Right:       r.setRight(r.right() + d.x());          break;
-        case CropHandle::BottomLeft:  r.setBottomLeft(r.bottomLeft() + d);    break;
-        case CropHandle::Bottom:      r.setBottom(r.bottom() + d.y());        break;
-        case CropHandle::BottomRight: r.setBottomRight(r.bottomRight() + d);  break;
-        case CropHandle::None: break;
+        if (m_activeHandle == CropHandle::Move) {
+            // Moving never resizes: the box keeps its size and just stops when
+            // it reaches an edge.
+            r = RotateGeometry::slideInside(start, delta, bounds);
+        } else {
+            // Resizing moves only the sides meeting the dragged handle, so the
+            // opposite corner is the anchor and stays exactly where it is.
+            QPointF anchor, corner;
+            bool freeX = true, freeY = true;
+            switch (m_activeHandle) {
+            case CropHandle::TopLeft:     anchor = start.bottomRight(); corner = start.topLeft();     break;
+            case CropHandle::TopRight:    anchor = start.bottomLeft();  corner = start.topRight();    break;
+            case CropHandle::BottomLeft:  anchor = start.topRight();    corner = start.bottomLeft();  break;
+            case CropHandle::BottomRight: anchor = start.topLeft();     corner = start.bottomRight(); break;
+            case CropHandle::Left:        anchor = start.bottomRight(); corner = start.topLeft();     freeY = false; break;
+            case CropHandle::Right:       anchor = start.topLeft();     corner = start.bottomRight(); freeY = false; break;
+            case CropHandle::Top:         anchor = start.bottomRight(); corner = start.topLeft();     freeX = false; break;
+            case CropHandle::Bottom:      anchor = start.topLeft();     corner = start.bottomRight(); freeX = false; break;
+            default: break;
+            }
+            r = RotateGeometry::resizeInside(anchor, corner, corner + delta, freeX, freeY, bounds);
         }
 
-        r = r.normalized().intersected(imageRect);
-        // On a tilted image the box may only ever cover the photograph itself,
-        // never the blank corners the rotation opened up.
-        if (!RotateGeometry::isZeroAngle(m_rotateAngle))
-            r = RotateGeometry::shrinkToFit(r, rotateBounds());
         if (r.width() >= 1.0 && r.height() >= 1.0) {
             m_cropRect = r;
             m_cropIsAuto = false;

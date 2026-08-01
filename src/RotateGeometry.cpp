@@ -4,6 +4,8 @@
 #include <QtMath>
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <vector>
 
 namespace {
 // Half a tenth of a degree — below the panel's finest step, so an angle this
@@ -19,6 +21,73 @@ constexpr double kInsideEpsilon = 1e-6;
 // keeps the overlay's geometry and the rendered buffer in the same coordinates.
 QTransform trueRotation(const QSize &size, double degrees) {
     return QImage::trueMatrix(QTransform().rotate(degrees), size.width(), size.height());
+}
+
+// A linear constraint `nx*x + ny*y >= d`. The tilted bounds are convex, so
+// "inside" is exactly the intersection of one of these per edge — and so is
+// every constrained drag derived from them.
+struct HalfPlane {
+    double nx, ny, d;
+};
+
+// The polygon's edges as inward half-planes, with unit normals so a violation
+// reads as a distance in pixels.
+std::vector<HalfPlane> insideHalfPlanes(const QPolygonF &poly) {
+    std::vector<HalfPlane> planes;
+    if (poly.size() < 3) return planes;
+
+    double twiceArea = 0.0;
+    for (int i = 0; i < poly.size(); ++i) {
+        const QPointF &a = poly[i];
+        const QPointF &b = poly[(i + 1) % poly.size()];
+        twiceArea += a.x() * b.y() - b.x() * a.y();
+    }
+    const double winding = twiceArea >= 0.0 ? 1.0 : -1.0;
+
+    planes.reserve(poly.size());
+    for (int i = 0; i < poly.size(); ++i) {
+        const QPointF &a = poly[i];
+        const QPointF &b = poly[(i + 1) % poly.size()];
+        const double ex = b.x() - a.x(), ey = b.y() - a.y();
+        const double len = std::hypot(ex, ey);
+        if (len <= 0.0) continue;   // a closed polygon repeats its first point
+        // Inside is winding * cross(edge, p - a) >= 0, rearranged into n·p >= d.
+        const double nx = -winding * ey / len;
+        const double ny =  winding * ex / len;
+        planes.push_back({nx, ny, nx * a.x() + ny * a.y()});
+    }
+    return planes;
+}
+
+// Push `p` into the intersection of the half-planes by repeatedly stepping it
+// back across whichever one it breaks (cyclic projection). Converges as long as
+// the intersection is non-empty, which every caller guarantees by starting from
+// a position that already fits. Pinned axes are held fixed, so a constraint only
+// the pinned axis could satisfy is simply skipped.
+QPointF projectInto(QPointF p, const std::vector<HalfPlane> &planes, bool freeX, bool freeY) {
+    if (planes.empty() || (!freeX && !freeY)) return p;
+
+    constexpr int    kSweeps = 64;
+    constexpr double kSlack  = 1e-7;
+    // Land a hair *inside* rather than exactly on the edge, so the result still
+    // reads as contained after the round-off a projection leaves behind.
+    constexpr double kMargin = 1e-4;
+
+    for (int sweep = 0; sweep < kSweeps; ++sweep) {
+        double worst = 0.0;
+        for (const HalfPlane &h : planes) {
+            const double violation = h.d - (h.nx * p.x() + h.ny * p.y());
+            if (violation <= kSlack) continue;
+            const double gx = freeX ? h.nx : 0.0;
+            const double gy = freeY ? h.ny : 0.0;
+            const double gg = gx * gx + gy * gy;
+            if (gg < 1e-12) continue;   // nothing the free axes can do about it
+            p += QPointF(gx, gy) * ((violation + kMargin) / gg);
+            worst = std::max(worst, violation);
+        }
+        if (worst <= kSlack) break;
+    }
+    return p;
 }
 }  // namespace
 
@@ -152,6 +221,68 @@ QRectF shrinkToFit(const QRectF &rect, const QPolygonF &poly) {
         else                             hi = mid;
     }
     return scaled(lo);
+}
+
+QRectF slideInside(const QRectF &rect, const QPointF &delta, const QPolygonF &poly) {
+    if (rect.isEmpty()) return rect;
+    const std::vector<HalfPlane> edges = insideHalfPlanes(poly);
+    if (edges.empty()) return rect.translated(delta);
+
+    const QPointF corners[4] = {rect.topLeft(), rect.topRight(),
+                                rect.bottomRight(), rect.bottomLeft()};
+
+    // Translating the whole rectangle collapses each edge's four corner
+    // constraints into one constraint on the offset — set by whichever corner
+    // leads into that edge. The rectangle's size never enters the solution, so
+    // it cannot change.
+    std::vector<HalfPlane> onOffset;
+    onOffset.reserve(edges.size());
+    for (const HalfPlane &h : edges) {
+        double nearest = std::numeric_limits<double>::max();
+        for (const QPointF &c : corners)
+            nearest = std::min(nearest, h.nx * c.x() + h.ny * c.y());
+        onOffset.push_back({h.nx, h.ny, h.d - nearest});
+    }
+
+    return rect.translated(projectInto(delta, onOffset, true, true));
+}
+
+QRectF resizeInside(const QPointF &anchor, const QPointF &startCorner,
+                    const QPointF &desiredCorner, bool freeX, bool freeY,
+                    const QPolygonF &poly) {
+    // A pinned axis keeps the side it controls exactly where the drag began.
+    QPointF corner(freeX ? desiredCorner.x() : startCorner.x(),
+                   freeY ? desiredCorner.y() : startCorner.y());
+
+    const std::vector<HalfPlane> edges = insideHalfPlanes(poly);
+    if (edges.empty()) return QRectF(anchor, corner).normalized();
+
+    // The anchor is fixed, so the rectangle is determined by the moving corner
+    // alone. Of its four corners, the anchor is already inside; the other three
+    // give one constraint each — two of them on a single axis, since they share
+    // a coordinate with the anchor.
+    std::vector<HalfPlane> onCorner;
+    onCorner.reserve(edges.size() * 3 + 2);
+    for (const HalfPlane &h : edges) {
+        onCorner.push_back(h);                                        // the moving corner
+        onCorner.push_back({h.nx, 0.0, h.d - h.ny * anchor.y()});      // (corner.x, anchor.y)
+        onCorner.push_back({0.0, h.ny, h.d - h.nx * anchor.x()});      // (anchor.x, corner.y)
+    }
+
+    // Keep the rectangle from collapsing through — or turning inside out at —
+    // its anchor.
+    constexpr double kMinSide = 1.0;
+    if (freeX) {
+        const double side = startCorner.x() >= anchor.x() ? 1.0 : -1.0;
+        onCorner.push_back({side, 0.0, side * anchor.x() + kMinSide});
+    }
+    if (freeY) {
+        const double side = startCorner.y() >= anchor.y() ? 1.0 : -1.0;
+        onCorner.push_back({0.0, side, side * anchor.y() + kMinSide});
+    }
+
+    corner = projectInto(corner, onCorner, freeX, freeY);
+    return QRectF(anchor, corner).normalized();
 }
 
 QRectF remapBetweenAngles(const QRectF &rect, const QSize &size,

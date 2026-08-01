@@ -231,8 +231,18 @@ bounding box over the **full, uncropped image**; they differ only in what a drag
 - **Crop interaction**: `hitTestHandle()` maps a viewport point to a corner (24 px grab),
   edge (15 px grab ≈ ±7.5× the border line width, anywhere along the edge), interior
   (move), or none. The grab distances and handle size derive from `kCropLineWidth`
-  (top of `ImageViewer.cpp`). `mouseMoveEvent` resizes/moves `m_cropRect`, clamped to the
-  rotated bounds and shrunk inside the tilted quad.
+  (top of `ImageViewer.cpp`). `mouseMoveEvent` then splits by gesture, because the two
+  mean different things once the bounds are a tilted quad:
+  - **Resize** (corner or edge) → `RotateGeometry::resizeInside()`. The *opposite* corner
+    is the anchor and is held fixed, so only the sides meeting the dragged handle move;
+    an edge drag pins one axis so a single side moves. Never scale the box to make it
+    fit — that would drag the sides the user isn't touching.
+  - **Move** (interior) → `RotateGeometry::slideInside()`. The size is fixed by
+    construction; the box slides along a diagonal edge and simply stops.
+
+  Both are given `rotateBounds()`, which on an upright image is the image's own
+  rectangle — so the tilted and untilted cases run the identical code and the untilted
+  one degenerates to plain per-axis clamping.
 - **Rotate interaction**: only the four corners are live. A press on one records the
   pointer's angle about the scene centre (`pointerAngle()`); each move feeds the swept
   delta to `setRotateAngle()`. Hovering a corner shows a generated curved-arrow cursor
@@ -265,8 +275,15 @@ buffer never drift apart.
 | `boundingSize(size, deg)` | Size of the buffer `RotateEdit::apply()` returns. |
 | `contains(poly, rect)` | All four rect corners inside the convex polygon (winding derived from the signed area, so orientation never has to be assumed). |
 | `largestInscribedRect(size, deg)` | The maximum-area axis-aligned rectangle inside the tilted original. Closed-form, then nudged in by `shrinkToFit` because the analytic answer rests exactly on the edges and rounding can leave a corner a hair outside. |
-| `shrinkToFit(rect, poly)` | Binary-searches the largest scale about the rect's own centre that fits; re-centres first if the centre has drifted off the quad. |
+| `shrinkToFit(rect, poly)` | Binary-searches the largest scale about the rect's own centre that fits; re-centres first if the centre has drifted off the quad. For *re-fitting* a selection the tilt has outgrown — never for a drag. |
 | `remapBetweenAngles(rect, size, from, to)` | Carries a selection from one angle's space to another's: same size, offset from the centre turned with the image, then shrunk to fit. |
+| `slideInside(rect, delta, poly)` | Translate without ever resizing. Each edge's four corner constraints collapse into one constraint on the offset, so the size cannot enter the solution. |
+| `resizeInside(anchor, start, desired, freeX, freeY, poly)` | Move one corner while the anchor holds still. Of the rect's four corners the anchor is already inside and the other three give one constraint each, two of them single-axis. Pinning an axis makes it an edge drag. |
+
+Both drag helpers reduce to projecting a point into an intersection of half-planes — the
+bounds are convex, so every constrained drag derived from them is too. `projectInto()`
+does that by cyclic projection, stepping the point back across whichever constraint it
+breaks until none are, landing a hair inside so the result still reads as contained.
 
 **The guarantee:** a selection is never allowed outside `rotatedBounds()`, so the applied
 crop can never include a blank corner and the result is always a full rectangle of
