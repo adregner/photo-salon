@@ -319,6 +319,10 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         emit exifRequested();
         event->accept();
         break;
+    case Qt::Key_G:
+        emit histogramRequested();
+        event->accept();
+        break;
     case Qt::Key_P:
         // On macOS Qt maps physical Ctrl → MetaModifier; Cmd → ControlModifier.
         // Check MetaModifier on macOS so Ctrl+P means the physical Control key everywhere.
@@ -467,6 +471,14 @@ void ImageViewer::setOverlayMode(OverlayMode mode) {
 
     if (cropMode()   != wasCrop)   emit cropModeChanged(cropMode());
     if (rotateMode() != wasRotate) emit rotateModeChanged(rotateMode());
+
+    // Entering the overlay swaps in the full upright original and leaving it
+    // swaps in the edited region, so either way what is on screen — and
+    // therefore the histogram — has changed. Reported last, after the mode
+    // change has been acted on, so the recompute reads the settled buffer.
+    // Crop ⇄ rotate does not swap the buffer, so it is not reported.
+    if (from == OverlayMode::None || mode == OverlayMode::None)
+        emit displayImageChanged();
 }
 
 void ImageViewer::enterOverlay() {
@@ -909,6 +921,7 @@ void ImageViewer::setDisplayPixmap(const QPixmap &px) {
         m_scene->setSceneRect(px.rect());
         if (m_fitted) fitImage();
     }
+    emit displayImageChanged();
 }
 
 void ImageViewer::setBasePixmapForCrop(const QPixmap &px) {

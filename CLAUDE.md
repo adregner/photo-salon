@@ -72,6 +72,9 @@ is in **`doc/ARCHITECTURE.md`**. The essentials:
 - **`MainWindow`** (`QMainWindow`) — orchestrator; owns the panes, every shared
   overlay/panel, and the compare `CompareTabBar`. Runs the display pipeline via the
   **focused** pane and wires each pane's viewer signals to handlers.
+- **`HistogramOverlay`** (`QWidget`) — `G`: a camera-style RGB + exposure histogram panel
+  measuring whatever the focused pane currently displays. Read-only; not part of the
+  edit pipeline.
 - **`main.cpp`** — CLI parsing only. An empty path is valid (idle state).
 
 ### Crop & rotate: one overlay, two modes
@@ -145,4 +148,5 @@ the main thread (`QtConcurrent` + `QFutureWatcher`), like B&W.
 | End-user install / run / packaging | `README.md` |
 | Per-image state & compare panes | `src/ImagePane.h`, `src/CompareTabBar.h`, `doc/ARCHITECTURE.md` |
 | HEIC & JPEG 2000 decoders (static Qt image plugins) | `src/imageformats/`, `doc/ARCHITECTURE.md` |
+| Histogram computation & camera-style panel | `src/Histogram.h`, `src/HistogramOverlay.h`, `doc/ARCHITECTURE.md` |
 | Planned & researched features | `ROADMAP.md` |

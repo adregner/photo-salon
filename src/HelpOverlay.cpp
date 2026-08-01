@@ -44,6 +44,7 @@ void HelpOverlay::paintEvent(QPaintEvent *) {
         "  F    Toggle fullscreen\n"
         "  B    Background color picker\n"
         "  I    Metadata\n"
+        "  G    Histogram (RGB + exposure)\n"
         "\n"
         "  Edit:\n"
         "\n"

@@ -17,6 +17,8 @@ this file has the detail. All source lives in `src/`.
 | `HelpOverlay` | `QWidget` | Mouse-transparent overlay painting the keyboard-shortcut list. Font auto-scales to fit. |
 | `ExifOverlay` | `QWidget` | Template-driven metadata overlay. Reverse-geocodes GPS via Nominatim. Shows live edit state. |
 | `ExifReader` | namespace | Reads file info + EXIF (via `easyexif`) into a `QMap<QString,QString>` of preformatted strings. |
+| `HistogramOverlay` | `QWidget` | Camera-style corner panel: R/G/B traces composited additively over a filled luminance curve, zone grid, tone ramp, clipping readouts. |
+| `Histogram` | namespace + `HistogramData` | Counts the 256-bin tone distribution (three channels + Rec.709 luma) of a `QImage`, sub-sampling large frames. |
 | `ExitOverlay` | `QWidget` | "Press Q again to exit" overlay shown during the quit debounce window. |
 | `BackgroundColorPicker` | `QWidget` | Grey-value (0–255) slider for the viewport background. Auto-dismisses. |
 | `BwPanel` | `QWidget` (Tool) | Black-&-white control panel: seven look buttons, six hue-band sliders, a contrast slider, Compare, Reset. Auto-dismisses. |
@@ -48,9 +50,9 @@ sinks (viewport, scene, child widgets) that would otherwise swallow keys.
 
 1. **`MainWindow` is installed as an application-wide event filter** (`qApp->installEventFilter`).
    `MainWindow::eventFilter` only looks at `KeyPress`, and bails if a modal widget is active.
-   - **Escape** is dismissed in priority order: metadata overlay → background picker →
-     help (only when an image is loaded) → B&W panel → adjust panel → the crop/rotate
-     overlay → fullscreen. If none
+   - **Escape** is dismissed in priority order: metadata overlay → histogram →
+     background picker → help (only when an image is loaded) → B&W panel → adjust
+     panel → the crop/rotate overlay → fullscreen. If none
      apply it returns `false` (Escape does nothing else).
    - **Any other key**, when the focused object is *not* the viewer or its viewport, is
      forwarded to the viewer via `QCoreApplication::sendEvent`. This is guarded by
@@ -73,6 +75,7 @@ sinks (viewport, scene, child widgets) that would otherwise swallow keys.
 | `F` | Toggle fullscreen | → `fullscreenToggleRequested` |
 | `B` | Background color picker | → `backgroundPickerRequested` |
 | `I` | Toggle metadata overlay | → `exifRequested` |
+| `G` | Toggle histogram panel | → `histogramRequested` |
 | `C` | Toggle light/levels & color panel | → `adjustPanelRequested` |
 | `X` | Toggle crop mode | `setCropMode()` |
 | `W` | Toggle B&W panel / conversion | → `bwPanelRequested` |
@@ -426,6 +429,47 @@ lat/long so repeat views don't refetch. Stale replies are dropped by comparing a
 and correct after edits), and `{CurrentDimensions}` (the edited `m_baseImage` size, shown
 only when it differs) into the data before the overlay is shown, so the overlay reflects
 in-memory edits, not just the file's EXIF.
+
+## Histogram overlay
+
+`G` toggles a small **`HistogramOverlay`** panel in the top-right corner, modelled on the
+RGB histogram screen of a professional camera: it reads out the exposure of the picture as
+it is on screen, and stays up while the photo is edited or the next one is opened.
+
+**Data (`Histogram::compute`, `HistogramData`)** — one pass over the image fills four
+256-bin arrays: red, green, blue, and a combined **luma** bin computed with Rec.709 weights
+on the *gamma-encoded* values (`(54·R + 183·G + 19·B) >> 8`), which is the perceptual
+brightness a camera plots as its exposure curve. Any `QImage` format is accepted (converted
+to 8-bit RGB first) so a B&W `Grayscale16` render counts just like a colour one. Frames
+larger than `Histogram::MaxSamples` (~1 M pixels) are **sub-sampled on a uniform grid** —
+the same step in x and y — exactly as a camera builds its histogram from the preview rather
+than the full sensor readout. The shape is unaffected; only the absolute counts scale, and
+everything is plotted relative to `plotCeiling()`.
+
+- `plotCeiling()` is the count mapped to full plot height: the peak of bins **1…254**. The
+  end bins are excluded because a black surround or a blown sky piles thousands of pixels
+  into a single bin and would flatten the rest of the curve; counts above the ceiling clip
+  against the top of the plot instead, as they do on a camera.
+- `clippedShadows()` / `clippedHighlights()` are the worst channel's fraction of samples
+  pinned at 0 / 255 — the "blinkies" readout in the panel header, shown above 0.1 %.
+
+**Drawing** — the luminance curve is filled soft white behind everything, then R, G and B
+are filled with `CompositionMode_Plus` so overlaps read yellow / cyan / magenta and all
+three together read white (the look of an in-camera RGB histogram), then each trace is
+outlined. A fifths zone grid sits behind the traces and a black→white tone ramp runs under
+the plot. Unlike the help and metadata overlays this one is a **corner panel**, not a
+full-window sheet, so the photo stays visible; `MainWindow::positionHistogram()` anchors it
+top-right (below the compare tab strip when that is up) and `panelSizeFor()` scales it with
+the window.
+
+**Staying current** — `ImageViewer` emits **`displayImageChanged()`** from
+`setDisplayPixmap()` and from `setOverlayMode()` when the overlay opens or closes, the
+points where what is on screen changes. (Switching crop ⇄ rotate does not swap the buffer,
+so it is not reported.) `MainWindow` recomputes from the focused pane on that signal (and on
+focus changes), reading **`ImagePane::displayImage()`** — `m_uprightImage`, the overlay base,
+while the crop/rotate UI is up, `m_baseImage` while comparing or when no post-crop edit
+applies, and otherwise the last render. So the numbers follow adjustments, B&W, crops,
+rotations and folder navigation live. Nothing is computed while the panel is hidden.
 
 ## Image format support
 

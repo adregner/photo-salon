@@ -85,6 +85,9 @@ signals:
     void helpVisibilityChanged(bool visible);
     // Zoom or pan changed (drives side-by-side view synchronization).
     void viewChanged();
+    // The displayed image content changed (a new render, a load, entering or
+    // leaving crop) — drives the histogram, which reads what is on screen.
+    void displayImageChanged();
     // The user interacted with this viewer (click/wheel) — request input focus.
     void focusRequested();
     // Shift+O — open a second image to compare side by side.
@@ -105,6 +108,7 @@ signals:
     void exitRequested();
     void openFileRequested();
     void exifRequested();
+    void histogramRequested();
     void openExternalRequested(bool useOriginal);
     void openExternalPickerRequested();
 

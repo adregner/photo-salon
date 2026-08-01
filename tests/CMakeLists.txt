@@ -133,6 +133,12 @@ add_test(NAME test_extra_formats COMMAND test_extra_formats)
 set_tests_properties(test_extra_formats PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+qt_add_executable(test_histogram test_histogram.cpp)
+target_link_libraries(test_histogram PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_histogram COMMAND test_histogram)
+set_tests_properties(test_histogram PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 qt_add_executable(test_compare test_compare.cpp)
 target_link_libraries(test_compare PRIVATE Qt6::Test photo-salon-lib)
 add_test(NAME test_compare COMMAND test_compare)
