@@ -10,11 +10,13 @@
 #include <QPixmap>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
 #include <QTimer>
 #include <QTransform>
 #include "MainWindow.h"
+#include "RotatePanel.h"
 #include "ImageViewer.h"
 
 static QString dims(int w, int h) { return QString("%1 × %2").arg(w).arg(h); }
@@ -105,9 +107,14 @@ void MainWindowTest::cropRect_rotatesWithImage_withoutClipping() {
     viewer->setCropMode(false);
     QCOMPARE(viewer->cropRect(), crop);
 
-    // Rotate 90° clockwise (R), then re-enter crop as the user would.
+    // Quarter turn clockwise from the rotate panel, then re-enter crop as the
+    // user would. The turn is applied from inside rotate mode, so the live
+    // selection is what gets re-mapped.
     QTest::keyClick(viewer, Qt::Key_R);
+    QVERIFY(viewer->rotateMode());
+    w.rotatePanel()->rotateRightButton()->click();
     QCOMPARE(viewer->cropRect().size(), QSizeF(60, 140));   // swapped, not clipped
+    QTest::keyClick(viewer, Qt::Key_R);                     // leave rotate mode
 
     viewer->setCropMode(true);
     QCOMPARE(viewer->cropRect().size(), QSizeF(60, 140));   // preserved on re-entry

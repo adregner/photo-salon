@@ -37,7 +37,7 @@ ImageEdit &EditManifest::ensure(const QString &type) {
     Q_ASSERT(edit);
     const int order = editOrderIndex(type);
     // Insert before the first edit that sorts after this one, so the vector stays
-    // ordered disk → orientation → crop → B&W.
+    // ordered disk → orientation → rotate → crop → B&W.
     auto pos = m_edits.begin();
     while (pos != m_edits.end() && editOrderIndex((*pos)->type()) <= order)
         ++pos;
@@ -52,23 +52,27 @@ void EditManifest::remove(const QString &type) {
 }
 
 OrientationEdit *EditManifest::orientation() { return static_cast<OrientationEdit *>(find(QStringLiteral("orientation"))); }
+RotateEdit      *EditManifest::rotate()      { return static_cast<RotateEdit *>(find(QStringLiteral("rotate"))); }
 CropEdit        *EditManifest::crop()        { return static_cast<CropEdit *>(find(QStringLiteral("crop"))); }
 AdjustEdit      *EditManifest::adjust()      { return static_cast<AdjustEdit *>(find(QStringLiteral("adjust"))); }
 ColorEdit       *EditManifest::color()       { return static_cast<ColorEdit *>(find(QStringLiteral("color"))); }
 BwEdit          *EditManifest::bw()          { return static_cast<BwEdit *>(find(QStringLiteral("bw"))); }
 const OrientationEdit *EditManifest::orientation() const { return static_cast<const OrientationEdit *>(find(QStringLiteral("orientation"))); }
+const RotateEdit      *EditManifest::rotate() const      { return static_cast<const RotateEdit *>(find(QStringLiteral("rotate"))); }
 const CropEdit        *EditManifest::crop() const        { return static_cast<const CropEdit *>(find(QStringLiteral("crop"))); }
 const AdjustEdit      *EditManifest::adjust() const      { return static_cast<const AdjustEdit *>(find(QStringLiteral("adjust"))); }
 const ColorEdit       *EditManifest::color() const       { return static_cast<const ColorEdit *>(find(QStringLiteral("color"))); }
 const BwEdit          *EditManifest::bw() const          { return static_cast<const BwEdit *>(find(QStringLiteral("bw"))); }
 
 OrientationEdit &EditManifest::ensureOrientation() { return static_cast<OrientationEdit &>(ensure(QStringLiteral("orientation"))); }
+RotateEdit      &EditManifest::ensureRotate()      { return static_cast<RotateEdit &>(ensure(QStringLiteral("rotate"))); }
 CropEdit        &EditManifest::ensureCrop()        { return static_cast<CropEdit &>(ensure(QStringLiteral("crop"))); }
 AdjustEdit      &EditManifest::ensureAdjust()      { return static_cast<AdjustEdit &>(ensure(QStringLiteral("adjust"))); }
 ColorEdit       &EditManifest::ensureColor()       { return static_cast<ColorEdit &>(ensure(QStringLiteral("color"))); }
 BwEdit          &EditManifest::ensureBw()          { return static_cast<BwEdit &>(ensure(QStringLiteral("bw"))); }
 
 void EditManifest::removeOrientation() { remove(QStringLiteral("orientation")); }
+void EditManifest::removeRotate()      { remove(QStringLiteral("rotate")); }
 void EditManifest::removeCrop()        { remove(QStringLiteral("crop")); }
 void EditManifest::removeAdjust()      { remove(QStringLiteral("adjust")); }
 void EditManifest::removeColor()       { remove(QStringLiteral("color")); }

@@ -51,6 +51,8 @@ add_library(photo-salon-lib STATIC
     src/BwPanel.cpp
     src/ImageAdjust.cpp
     src/AdjustPanel.cpp
+    src/RotateGeometry.cpp
+    src/RotatePanel.cpp
     src/ImageEdit.cpp
     src/EditManifest.cpp
     src/ExitOverlay.cpp

@@ -121,8 +121,33 @@ that is saved locally and re-applied automatically the next time you open the sa
 original on disk is never modified — use `S` to save an edited copy.
 
 Press `?` in the app for the full list of shortcuts. The editing keys are `C` (adjust light,
-levels & colour — a two-tab pop-up panel), `X` (crop), `W` (black & white), `R` (rotate),
+levels & colour — a two-tab pop-up panel), `X` (crop), `R` (rotate), `W` (black & white),
 `H` / `V` (flip), and `\` (compare against the original colour image).
+
+### Crop and rotate
+
+`X` and `R` put the same bounding box over the full, uncropped photograph, and differ in
+what dragging does. In **crop mode** (`X`) the box is dragged and resized by its corners and
+edge midpoints. In **rotate mode** (`R`) the box is fixed and **dragging a corner turns the
+image** underneath it — the cursor becomes a curved arrow pointing the two ways that corner
+can travel. A panel appears with **Rotate Left** / **Rotate Right** for lossless 90° turns
+and a **Straighten** slider for the fine angle; together they reach any angle. Double-click
+resets the crop, or the rotation, depending on which mode you are in. `X` and `R` switch
+straight between the two modes without applying anything; `Esc` (or pressing the same key
+again) leaves the overlay and applies the result.
+
+Straightening a photograph tilts it inside a larger frame and would otherwise leave blank
+triangles in the corners. Photo Salon never lets that happen: the box is held inside the
+tilted photograph's bounds, so an un-cropped photo that is rotated a little automatically
+picks up the largest crop that still fits and the result stays a full rectangle. A crop you
+placed yourself is carried along with the rotation and only shrunk if the tilt would push it
+past the edge.
+
+The same limit applies in crop mode: on a tilted frame the box is held inside the dashed
+outline of the photograph rather than being allowed out over a blank corner. It behaves
+exactly as it does on an upright photo — dragging a corner moves only the two sides that
+meet it, dragging the box never changes its size, and either way it simply stops when it
+runs out of photograph.
 
 ### Compare two images side by side
 

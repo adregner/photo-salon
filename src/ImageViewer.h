@@ -1,6 +1,8 @@
 #pragma once
+#include <QCursor>
 #include <QGraphicsView>
 #include <QPointF>
+#include <QPolygonF>
 #include <QRectF>
 #include <QSize>
 #include <QString>
@@ -36,11 +38,36 @@ public:
     void setBasePixmapForCrop(const QPixmap &px);
     void setBackgroundGrey(int value);
     int backgroundGrey() const { return m_backgroundGrey; }
+
+    // --- The selection overlay (crop mode and rotate mode) -----------------
+    // Both modes put the same bounding box over the full, uncropped image; they
+    // differ only in what dragging does — crop drags the box, rotate turns the
+    // image under it. Switching directly between them keeps the box as it is;
+    // leaving the overlay altogether is what applies the selection.
     void setCropMode(bool active);
-    bool cropMode() const { return m_cropMode; }
+    bool cropMode() const { return m_overlay == OverlayMode::Crop; }
+    void setRotateMode(bool active);
+    bool rotateMode() const { return m_overlay == OverlayMode::Rotate; }
+    bool overlayActive() const { return m_overlay != OverlayMode::None; }
+    void closeOverlay() { setOverlayMode(OverlayMode::None); }
+
+    // The selection, in the coordinates of the *rotated* image — the same space
+    // the manifest's CropEdit normalizes against.
     void setCropRect(const QRectF &rect);
     QRectF cropRect() const { return m_cropRect; }
-    bool cropNoticeVisible() const { return m_cropNoticeVisible; }
+    bool overlayNoticeVisible() const { return m_noticeVisible; }
+
+    // Free rotation, in degrees (positive turns the image clockwise). The
+    // overlay applies it to the pixmap item, so dragging stays interactive; the
+    // committed, full-quality rotation is the manifest's RotateEdit.
+    void setRotateAngle(double degrees);
+    double rotateAngle() const { return m_rotateAngle; }
+    // Bounding box of the rotated image: the coordinate space cropRect() and
+    // the overlay live in.
+    QRectF rotatedBoundsRect() const;
+    // The tilted original's outline inside that box. The selection is always
+    // held inside it, so the applied crop never includes a blank corner.
+    QPolygonF rotateBounds() const;
 
     // --- View synchronization (side-by-side compare) ---------------------
     // The scale fitInView() would apply right now (viewport ÷ scene). Used to
@@ -67,11 +94,12 @@ signals:
     void fullscreenToggleRequested();
     void backgroundPickerRequested();
     void cropModeChanged(bool active);
+    void rotateModeChanged(bool active);
+    void rotateAngleChanged(double degrees);
     void saveRequested();
     void bwPanelRequested();
     void bwCompareRequested();
     void adjustPanelRequested();
-    void rotateRequested();
     void flipHorizontalRequested();
     void flipVerticalRequested();
     void exitRequested();
@@ -95,19 +123,34 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
+    enum class OverlayMode { None, Crop, Rotate };
+
     enum class CropHandle {
         None, Move,
         TopLeft, Top, TopRight,
         Left, Right,
         BottomLeft, Bottom, BottomRight
     };
+    static bool isCorner(CropHandle h);
 
     void fitImage();
     void applyZoom(double factor);
     void navigate(int delta);
     void emitViewChanged();   // emit viewChanged() unless suppressed
     CropHandle hitTestHandle(const QPoint &viewportPos) const;
-    void updateCropCursor(const QPoint &viewportPos);
+    void updateOverlayCursor(const QPoint &viewportPos);
+    QCursor rotateCursorFor(CropHandle handle) const;
+    // Angle of the pointer around the image centre, in degrees — the quantity a
+    // rotate drag tracks.
+    double pointerAngle(const QPoint &viewportPos) const;
+
+    // --- Overlay plumbing --------------------------------------------------
+    void setOverlayMode(OverlayMode mode);
+    void enterOverlay();       // swap in the uncropped base and arm the selection
+    void exitOverlay();        // bake rotation + crop into the displayed pixmap
+    void syncOverlayGeometry();// item transform + scene rect for the current angle
+    void showOverlayNotice();  // the one-time hint for the mode being entered
+    QSize overlayBaseSize() const;   // size of the full, unrotated base image
 
     QGraphicsScene *m_scene;
     QGraphicsPixmapItem *m_pixmapItem = nullptr;
@@ -117,14 +160,25 @@ private:
     bool m_fitted = true;
     bool m_helpVisible = false;
     int m_backgroundGrey = 0;
-    bool m_cropMode = false;
+
+    OverlayMode m_overlay = OverlayMode::None;
     QRectF m_cropRect;
+    // True while the selection is the automatic "largest rectangle that fits"
+    // rather than one the user placed. An automatic selection is recomputed as
+    // the angle changes; a placed one is carried along and only shrunk to fit.
+    bool m_cropIsAuto = true;
+    double m_rotateAngle = 0.0;
     CropHandle m_activeHandle = CropHandle::None;
     QPointF m_dragStartScene;
     QRectF m_dragStartCropRect;
+    bool m_rotating = false;
+    double m_rotateDragStartAngle = 0.0;
+    double m_rotateDragStartPointer = 0.0;
+
     bool m_cropNoticeShown = false;
-    bool m_cropNoticeVisible = false;
-    QTimer *m_cropNoticeTimer = nullptr;
+    bool m_rotateNoticeShown = false;
+    bool m_noticeVisible = false;
+    QTimer *m_noticeTimer = nullptr;
     // Suppress viewChanged() while we are programmatically applying another
     // viewer's view (prevents a sync feedback loop).
     bool m_suppressViewChanged = false;

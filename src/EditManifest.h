@@ -29,11 +29,13 @@ public:
     // Typed accessors. The const/non-const pair returns nullptr when the edit of
     // that kind is not currently applied.
     OrientationEdit *orientation();
+    RotateEdit      *rotate();
     CropEdit        *crop();
     AdjustEdit      *adjust();
     ColorEdit       *color();
     BwEdit          *bw();
     const OrientationEdit *orientation() const;
+    const RotateEdit      *rotate() const;
     const CropEdit        *crop() const;
     const AdjustEdit      *adjust() const;
     const ColorEdit       *color() const;
@@ -42,6 +44,7 @@ public:
     // Get-or-create the edit of a kind, inserted at its canonical pipeline
     // position. Use these to mutate an edit's settings.
     OrientationEdit &ensureOrientation();
+    RotateEdit      &ensureRotate();
     CropEdit        &ensureCrop();
     AdjustEdit      &ensureAdjust();
     ColorEdit       &ensureColor();
@@ -49,6 +52,7 @@ public:
 
     // Drop an edit (so it is no longer applied).
     void removeOrientation();
+    void removeRotate();
     void removeCrop();
     void removeAdjust();
     void removeColor();

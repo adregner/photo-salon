@@ -1,4 +1,5 @@
 #include "ImageEdit.h"
+#include "RotateGeometry.h"
 #include <QJsonArray>
 #include <QJsonValue>
 #include <QStringList>
@@ -9,15 +10,17 @@
 // ---------------------------------------------------------------------------
 int editOrderIndex(const QString &type) {
     if (type == QLatin1String("orientation")) return 0;
-    if (type == QLatin1String("crop"))        return 1;
-    if (type == QLatin1String("adjust"))      return 2;
-    if (type == QLatin1String("color"))       return 3;
-    if (type == QLatin1String("bw"))          return 4;
+    if (type == QLatin1String("rotate"))      return 1;
+    if (type == QLatin1String("crop"))        return 2;
+    if (type == QLatin1String("adjust"))      return 3;
+    if (type == QLatin1String("color"))       return 4;
+    if (type == QLatin1String("bw"))          return 5;
     return 99;  // unknown types sort last
 }
 
 std::unique_ptr<ImageEdit> makeEdit(const QString &type) {
     if (type == QLatin1String("orientation")) return std::make_unique<OrientationEdit>();
+    if (type == QLatin1String("rotate"))      return std::make_unique<RotateEdit>();
     if (type == QLatin1String("crop"))        return std::make_unique<CropEdit>();
     if (type == QLatin1String("adjust"))      return std::make_unique<AdjustEdit>();
     if (type == QLatin1String("color"))       return std::make_unique<ColorEdit>();
@@ -44,6 +47,11 @@ void OrientationEdit::compose(const QTransform &step) {
 void OrientationEdit::rotateClockwise() {
     compose(QTransform().rotate(90));
     m_rotation = (m_rotation + 90) % 360;
+}
+
+void OrientationEdit::rotateCounterClockwise() {
+    compose(QTransform().rotate(-90));
+    m_rotation = (m_rotation + 270) % 360;
 }
 
 void OrientationEdit::flipHorizontal() {
@@ -102,6 +110,42 @@ QString OrientationEdit::summary() const {
     if (m_flippedH)      parts << QStringLiteral("H flip");
     if (m_flippedV)      parts << QStringLiteral("V flip");
     return parts.join(QStringLiteral(" · "));
+}
+
+// ---------------------------------------------------------------------------
+// RotateEdit
+// ---------------------------------------------------------------------------
+void RotateEdit::setAngle(double degrees) {
+    m_angle = RotateGeometry::clampAngle(degrees);
+}
+
+bool RotateEdit::isIdentity() const {
+    return RotateGeometry::isZeroAngle(m_angle);
+}
+
+QImage RotateEdit::apply(const QImage &in) const {
+    if (in.isNull() || isIdentity()) return in;
+    return in.transformed(QTransform().rotate(m_angle), Qt::SmoothTransformation);
+}
+
+std::unique_ptr<ImageEdit> RotateEdit::clone() const {
+    return std::make_unique<RotateEdit>(*this);
+}
+
+QJsonObject RotateEdit::toJson() const {
+    QJsonObject o;
+    o["type"]  = type();
+    o["angle"] = m_angle;
+    return o;
+}
+
+void RotateEdit::fromJson(const QJsonObject &obj) {
+    setAngle(obj.value("angle").toDouble(0.0));
+}
+
+QString RotateEdit::summary() const {
+    if (isIdentity()) return QString();
+    return QStringLiteral("%1° straighten").arg(m_angle, 0, 'f', 1);
 }
 
 // ---------------------------------------------------------------------------

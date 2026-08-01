@@ -12,8 +12,8 @@ this file has the detail. All source lives in `src/`.
 | `ImagePane` | `QObject` | All per-image state: one `ImageViewer`, that image's **`EditManifest`**, the derived `QImage` buffers, and the off-thread display-render pipeline. One pane in single mode; two independent panes in side-by-side compare mode. |
 | `CompareTabBar` | `QWidget` | The minimal tab strip shown atop the window in compare mode: one tab per image (file name + `✕`), focused tab lighter. Emits `tabSelected` / `tabClosed`. Hidden when only one image is open. |
 | `EditManifest` | value type | The single, ordered, canonical record of every edit applied to one image. Typed accessors, `render()`, JSON (de)serialization, and per-path persistence in `QSettings`. |
-| `ImageEdit` | interface | Common interface every editing module implements: `apply(QImage)` on an in-memory buffer, JSON (de)serialization, `clone()`, and a `summary()` tag. Concrete: `OrientationEdit`, `CropEdit`, `BwEdit`. |
-| `ImageViewer` | `QGraphicsView` | Display + input. Owns the `QGraphicsScene` and the single `QGraphicsPixmapItem`. Handles zoom/pan/fit, folder navigation, the crop UI, exposes relative zoom/pan for sync, and emits *intent* signals for everything it does not own. |
+| `ImageEdit` | interface | Common interface every editing module implements: `apply(QImage)` on an in-memory buffer, JSON (de)serialization, `clone()`, and a `summary()` tag. Concrete: `OrientationEdit`, `RotateEdit`, `CropEdit`, `AdjustEdit`, `ColorEdit`, `BwEdit`. |
+| `ImageViewer` | `QGraphicsView` | Display + input. Owns the `QGraphicsScene` and the single `QGraphicsPixmapItem`. Handles zoom/pan/fit, folder navigation, the crop/rotate overlay, exposes relative zoom/pan for sync, and emits *intent* signals for everything it does not own. |
 | `HelpOverlay` | `QWidget` | Mouse-transparent overlay painting the keyboard-shortcut list. Font auto-scales to fit. |
 | `ExifOverlay` | `QWidget` | Template-driven metadata overlay. Reverse-geocodes GPS via Nominatim. Shows live edit state. |
 | `ExifReader` | namespace | Reads file info + EXIF (via `easyexif`) into a `QMap<QString,QString>` of preformatted strings. |
@@ -26,10 +26,11 @@ this file has the detail. All source lives in `src/`.
 | `Const.h` | — | `PANEL_DISMISS = 7500 ms`, `EXIT_DEBOUNCE = 1200 ms`. |
 
 **Design rule:** `ImageViewer` never owns transform/business state. When the user
-presses a key the viewer doesn't act on directly (rotate, flip, save, B&W, metadata,
+presses a key the viewer doesn't act on directly (flip, save, B&W, metadata,
 fullscreen, open, background), it **emits a signal** and `MainWindow` decides what to do.
 The only things the viewer mutates on its own are view state (zoom/pan/fit), folder
-navigation, and the in-progress crop selection.
+navigation, and the in-progress crop selection and rotation angle — which are still only
+*applied* once `MainWindow` folds them into the manifest.
 
 ## Startup & idle state
 
@@ -48,7 +49,8 @@ sinks (viewport, scene, child widgets) that would otherwise swallow keys.
 1. **`MainWindow` is installed as an application-wide event filter** (`qApp->installEventFilter`).
    `MainWindow::eventFilter` only looks at `KeyPress`, and bails if a modal widget is active.
    - **Escape** is dismissed in priority order: metadata overlay → background picker →
-     help (only when an image is loaded) → B&W panel → crop mode → fullscreen. If none
+     help (only when an image is loaded) → B&W panel → adjust panel → the crop/rotate
+     overlay → fullscreen. If none
      apply it returns `false` (Escape does nothing else).
    - **Any other key**, when the focused object is *not* the viewer or its viewport, is
      forwarded to the viewer via `QCoreApplication::sendEvent`. This is guarded by
@@ -75,7 +77,7 @@ sinks (viewport, scene, child widgets) that would otherwise swallow keys.
 | `X` | Toggle crop mode | `setCropMode()` |
 | `W` | Toggle B&W panel / conversion | → `bwPanelRequested` |
 | `\` | Compare against original color image | → `bwCompareRequested` (`toggleCompare`) |
-| `R` | Rotate 90° clockwise | → `rotateRequested` |
+| `R` | Toggle rotate mode | `setRotateMode()` |
 | `H` / `V` | Flip horizontal / vertical | → `flipHorizontalRequested` / `flipVerticalRequested` |
 | `S` | Save current displayed image | → `saveRequested` |
 | `O` | Open file (native dialog) | → `openFileRequested` |
@@ -83,9 +85,10 @@ sinks (viewport, scene, child widgets) that would otherwise swallow keys.
 | `Tab` | Open another file from the current folder | → `folderBrowseRequested` (list dialog) |
 | `Q` | Quit — press twice within `EXIT_DEBOUNCE` | → `exitRequested` |
 | `?` | Toggle this help overlay | `helpVisibilityChanged` |
-| `Esc` | Dismiss overlay / panel / crop / fullscreen | handled in `MainWindow::eventFilter` |
+| `Esc` | Dismiss overlay / panel / crop-rotate / fullscreen | handled in `MainWindow::eventFilter` |
 | Scroll wheel | Zoom, anchored under cursor | `wheelEvent` |
-| Drag (no crop) | Pan | `ScrollHandDrag` |
+| Drag (no overlay) | Pan | `ScrollHandDrag` |
+| Drag a corner (rotate mode) | Turn the image | `mouseMoveEvent` → `setRotateAngle()` |
 
 ## The edit manifest (canonical edit state)
 
@@ -104,12 +107,16 @@ designs (`m_rotationAngle`, `m_flippedH/V`, `m_cropApplied`, `m_bwActive`, …) 
 | `clone()` | Deep copy (the manifest is value-semantic). |
 | `summary()` | Short tag for the metadata edit-state line (`90° rotation`, `crop`, `B&W`); empty to omit. |
 
-Five concrete edits implement it:
+Six concrete edits implement it:
 
 - **`OrientationEdit`** — lossless rotation/flip. Stores the *net* linear transform (the
   dihedral group) so repeated `R`/`H`/`V` presses compose exactly the way they did on screen,
   and a reopened image reproduces the same orientation. It also keeps descriptive
   rotation/flip counters that drive `summary()`.
+- **`RotateEdit`** — free-angle rotation for straightening a tilted horizon, clamped to
+  ±45° (`RotateGeometry::kMaxAngle`); whole quarter turns stay in `OrientationEdit`, and the
+  two together reach any angle. `apply()` grows the buffer to the bounding box of the tilted
+  image, leaving blank corners the crop is guaranteed to exclude.
 - **`CropEdit`** — a rectangle in **normalized** coordinates (fractions of the buffer, 0..1),
   so it is resolution-independent. `apply()` copies that region out of the oriented image.
 - **`AdjustEdit`** — light/tone: brightness, contrast, exposure, saturation, and black/white
@@ -122,13 +129,13 @@ Five concrete edits implement it:
 - **`BwEdit`** — wraps `BwParams` and defers to `BwConverter::convert()`, making B&W conform
   to the interface.
 
-`EditManifest` keeps its edits in canonical pipeline order (orientation → crop → adjust →
+`EditManifest` keeps its edits in canonical pipeline order (orientation → rotate → crop → adjust →
 color → B&W) via `editOrderIndex()`; the `ensure*()` accessors insert at the right slot, and
 an edit is present **only while it is applied** (removed when it returns to identity / full /
 neutral / reset-to-colour). `render()` folds `apply()` over the edits in order — the path used
 to reconstruct an image from disk. `renderAfterCrop()` applies only the post-crop edits
 (adjust → color → B&W) to an already-cropped base; this is the live display pipeline's hot
-path, since orientation and crop are cached as buffers. `summary()` joins the per-edit
+path, since orientation, rotation and crop are cached as buffers. `summary()` joins the per-edit
 summaries.
 
 **Persistence:** `saveFor(path)` / `loadFor(path)` serialize the manifest to compact JSON
@@ -146,15 +153,17 @@ by each `ImagePane`. Order:
    `QImageReader::setAutoTransform(true)` (EXIF orientation is baked in at load). On the
    `imagePathChanged` signal `ImagePane::reloadFromDisk()` captures it into `m_diskImage`,
    loads that path's saved manifest, and re-derives the buffers below.
-2. **Orientation** — `R`/`H`/`V` → `applyOrientationStep()` composes a step onto the
-   manifest's `OrientationEdit`.
-3. **Crop** — `ImageViewer` owns the crop UI; on exit `MainWindow` folds the selection into
-   the manifest's `CropEdit` (normalized).
-4. **B&W** — the manifest's `BwEdit` runs off-thread via `BwConverter::convert()`; non-destructive.
-5. **Display** — `ImageViewer::setDisplayPixmap()` swaps the item's pixmap and refreshes
+2. **Orientation** — the rotate panel's 90° buttons and `H`/`V` → `applyOrientationStep()`
+   composes a step onto the manifest's `OrientationEdit`.
+3. **Rotate** — the free angle dragged out in rotate mode, folded into the manifest's
+   `RotateEdit` when the overlay closes.
+4. **Crop** — `ImageViewer` owns the selection overlay; on close `MainWindow` folds the
+   selection into the manifest's `CropEdit` (normalized against the *rotated* image).
+5. **B&W** — the manifest's `BwEdit` runs off-thread via `BwConverter::convert()`; non-destructive.
+6. **Display** — `ImageViewer::setDisplayPixmap()` swaps the item's pixmap and refreshes
    the scene rect if dimensions changed (e.g. after a 90° rotation).
 
-### Buffer state model (three `QImage` fields in `ImagePane`)
+### Buffer state model (four `QImage` fields in `ImagePane`)
 
 Each buffer is *derived* from the manifest applied to the previous stage — `ImagePane` does
 not store transform state independently of the manifest. `rebuildOriented()` and
@@ -163,8 +172,9 @@ not store transform state independently of the manifest. `rebuildOriented()` and
 | Field | Definition | Recomputed when |
 |---|---|---|
 | `m_diskImage` | The image exactly as loaded from disk. | Load / navigation only (never edited). |
-| `m_orientedImage` | `OrientationEdit::apply(m_diskImage)`. The **full-size crop base** — passed to `setBasePixmapForCrop()`. | `rebuildOriented()`: load and every orientation change. |
-| `m_baseImage` | `CropEdit::apply(m_orientedImage)`. The **B&W source**. | `rebuildBase()`: load, every crop apply, every orientation change. |
+| `m_uprightImage` | `OrientationEdit::apply(m_diskImage)`. The **overlay base** — passed to `setBasePixmapForCrop()`; the viewer applies the free angle to it itself, so dragging stays interactive. | `rebuildOriented()`: load and every orientation change. |
+| `m_orientedImage` | `RotateEdit::apply(m_uprightImage)`. The **full-size crop base**. | `rebuildOriented()`: load, orientation change, rotation change. |
+| `m_baseImage` | `CropEdit::apply(m_orientedImage)`. The **B&W source**. | `rebuildBase()`: load, every crop apply, every orientation/rotation change. |
 
 **Contract for any new display-transform feature:** add an `ImageEdit` subclass, store its
 settings in the `EditManifest`, read input from `m_baseImage`, and write output through
@@ -203,46 +213,115 @@ keeps a `QList<ImagePane*>` and a `m_focus` index, plus the *shared* overlays/pa
   `m_syncingViews`, and one-directional so the mirror target never echoes back). This makes
   zoom relative to "fit" and pan relative to pixels, so differently-sized images stay matched.
 
-## Crop tool (in `ImageViewer`)
+## Crop & rotate overlay (in `ImageViewer`)
 
-- **Enter** (`setCropMode(true)`): swaps the pixmap item to the crop base
+`X` and `R` are two modes of one selection overlay
+(`OverlayMode::{None, Crop, Rotate}`, driven by `setOverlayMode()`). Both put the same
+bounding box over the **full, uncropped image**; they differ only in what a drag does.
+
+- **Enter** (`enterOverlay()`): swaps the pixmap item to the overlay base
   (`m_cropBasePixmap`, set via `setBasePixmapForCrop()`; falls back to reloading the file
-  from disk if unset), so the user always sees the **full oriented original** and can
-  *expand* a previous selection as well as shrink it. Initializes/clamps `m_cropRect`,
-  fits, disables `ScrollHandDrag`.
-- **Interaction**: `hitTestHandle()` maps a viewport point to a corner (24 px grab),
+  from disk if unset, and caches the result), so the user always sees the whole upright
+  original and can *expand* a previous selection as well as shrink it. Then
+  `syncOverlayGeometry()` puts the current free angle on the item as a transform, sizes the
+  scene to the rotated bounding box, the selection is armed, and `ScrollHandDrag` is off.
+- **Switching `X` ⇄ `R`** applies **nothing** — the box and the image stay exactly as they
+  are. Both `cropModeChanged` and `rotateModeChanged` are emitted, and `MainWindow` ignores
+  either while `overlayActive()` is still true.
+- **Crop interaction**: `hitTestHandle()` maps a viewport point to a corner (24 px grab),
   edge (15 px grab ≈ ±7.5× the border line width, anywhere along the edge), interior
   (move), or none. The grab distances and handle size derive from `kCropLineWidth`
-  (top of `ImageViewer.cpp`). `mouseMoveEvent` resizes/moves `m_cropRect` (normalized,
-  clamped to the image). `drawForeground()` paints the dark mask over excluded regions
-  (scene coords) plus a white border and eight handles (viewport coords).
-- **Exit/apply** (`setCropMode(false)`): copies the selected rect out of the current
-  pixmap and sets it on the item, then emits `cropModeChanged(false)`. `MainWindow` reads
-  `viewer->cropRect()`, folds it into the manifest's `CropEdit` as a **normalized** rect
-  (removing the edit if it covers the full image), re-derives `m_baseImage` via
-  `rebuildBase()`, persists, and re-runs B&W if active.
-- `setCropRect()` clamps against `m_cropBasePixmap` when set, which lets `MainWindow`
-  store a *transformed* crop rect while crop is inactive (see orientation below).
+  (top of `ImageViewer.cpp`). `mouseMoveEvent` then splits by gesture, because the two
+  mean different things once the bounds are a tilted quad:
+  - **Resize** (corner or edge) → `RotateGeometry::resizeInside()`. The *opposite* corner
+    is the anchor and is held fixed, so only the sides meeting the dragged handle move;
+    an edge drag pins one axis so a single side moves. Never scale the box to make it
+    fit — that would drag the sides the user isn't touching.
+  - **Move** (interior) → `RotateGeometry::slideInside()`. The size is fixed by
+    construction; the box slides along a diagonal edge and simply stops.
+
+  Both are given `rotateBounds()`, which on an upright image is the image's own
+  rectangle — so the tilted and untilted cases run the identical code and the untilted
+  one degenerates to plain per-axis clamping.
+- **Rotate interaction**: only the four corners are live. A press on one records the
+  pointer's angle about the scene centre (`pointerAngle()`); each move feeds the swept
+  delta to `setRotateAngle()`. Hovering a corner shows a generated curved-arrow cursor
+  (`rotateCursorPixmap()`, cached per 5°) turned so its two arrowheads lie along the two
+  ways that corner can travel. Double-click resets the angle (crop mode's double-click
+  resets the selection).
+- **Painting** (`drawForeground()`): the dark mask over excluded regions and a dashed
+  outline of the tilted photograph in scene coords, then a white border and handles in
+  viewport coords — eight square handles in crop mode, four round ones in rotate mode.
+- **Exit/apply** (`exitOverlay()`): bakes rotation *then* selection into the shown pixmap
+  and emits the mode-changed signal(s). `MainWindow::commitOverlay()` then writes the angle
+  into the manifest's `RotateEdit`, calls `rebuildOriented()` so the rotated buffer exists,
+  and folds `viewer->cropRect()` into the `CropEdit` as a rect **normalized against that
+  rotated buffer** (removing either edit when it returns to identity/full).
+- `setCropRect()` clamps against the rotated bounds derived from `m_cropBasePixmap`, which
+  lets `MainWindow` store a *transformed* crop rect while no overlay is open (see
+  orientation below).
+
+## Rotation geometry (`RotateGeometry`)
+
+Rotating grows an image to the axis-aligned bounding box of the tilted original and leaves
+blank triangles in the corners. Every helper here works in **that bounding box's coordinate
+space**, which is also the space `m_cropRect` and the `CropEdit` live in. They share
+`QImage::trueMatrix()` with the actual render, so the overlay's geometry and the produced
+buffer never drift apart.
+
+| Function | Purpose |
+|---|---|
+| `rotatedBounds(size, deg)` | The tilted original's four corners — the convex quad the selection must stay inside. |
+| `boundingSize(size, deg)` | Size of the buffer `RotateEdit::apply()` returns. |
+| `contains(poly, rect)` | All four rect corners inside the convex polygon (winding derived from the signed area, so orientation never has to be assumed). |
+| `largestInscribedRect(size, deg)` | The maximum-area axis-aligned rectangle inside the tilted original. Closed-form, then nudged in by `shrinkToFit` because the analytic answer rests exactly on the edges and rounding can leave a corner a hair outside. |
+| `shrinkToFit(rect, poly)` | Binary-searches the largest scale about the rect's own centre that fits; re-centres first if the centre has drifted off the quad. For *re-fitting* a selection the tilt has outgrown — never for a drag. |
+| `remapBetweenAngles(rect, size, from, to)` | Carries a selection from one angle's space to another's: same size, offset from the centre turned with the image, then shrunk to fit. |
+| `slideInside(rect, delta, poly)` | Translate without ever resizing. Each edge's four corner constraints collapse into one constraint on the offset, so the size cannot enter the solution. |
+| `resizeInside(anchor, start, desired, freeX, freeY, poly)` | Move one corner while the anchor holds still. Of the rect's four corners the anchor is already inside and the other three give one constraint each, two of them single-axis. Pinning an axis makes it an edge drag. |
+
+Both drag helpers reduce to projecting a point into an intersection of half-planes — the
+bounds are convex, so every constrained drag derived from them is too. `projectInto()`
+does that by cyclic projection, stepping the point back across whichever constraint it
+breaks until none are, landing a hair inside so the result still reads as contained.
+
+**The guarantee:** a selection is never allowed outside `rotatedBounds()`, so the applied
+crop can never include a blank corner and the result is always a full rectangle of
+photograph. `ImageViewer` tracks whether the selection is *automatic* (`m_cropIsAuto`) — an
+untouched box is recomputed as `largestInscribedRect()` on every angle change, so an
+un-cropped photo that is straightened keeps the largest image possible; a box the user
+placed is carried through `remapBetweenAngles()` and only shrunk when the tilt demands it.
+
+## Rotate panel (`RotatePanel`)
+
+The visible face of rotate mode, shown and hidden by `MainWindow` with the mode itself (it
+never auto-dismisses, unlike `AdjustPanel` / `BwPanel`). It holds the two lossless
+quarter-turn buttons — the behaviour the `R` key used to have — and a **Straighten** slider
+in tenths of a degree over ±`RotateGeometry::kMaxAngle`. It only reports intent: the buttons
+route to `applyOrientationStep()`, the slider to `ImageViewer::setRotateAngle()`, and
+`rotateAngleChanged` from a corner drag echoes back into the slider.
 
 ## Orientation (`MainWindow::applyOrientationStep`)
 
-- If crop is active, it's applied first so the rotation acts on the cropped image.
-- The step (`OrientationStep::RotateCW` / `FlipH` / `FlipV`) is composed onto the manifest's
-  `OrientationEdit`, which accumulates the **net** dihedral transform. `rebuildOriented()`
-  re-derives `m_orientedImage = OrientationEdit::apply(m_diskImage)` — a single transform of
-  the disk image, never an incremental transform of a transform.
-- `QPixmap::trueMatrix(t, w, h)` reproduces the translation Qt adds when transforming,
-  which is used to map the saved crop rect into the new coordinate space — so re-entering
-  crop still pre-selects the same region after a rotate/flip.
-- Order matters: the crop base is re-armed to the new `m_orientedImage` (in
+- The step (`OrientationStep::RotateCW` / `RotateCCW` / `FlipH` / `FlipV`) is composed onto
+  the manifest's `OrientationEdit`, which accumulates the **net** dihedral transform.
+  `rebuildOriented()` re-derives `m_uprightImage = OrientationEdit::apply(m_diskImage)` — a
+  single transform of the disk image, never an incremental transform of a transform.
+- Quarter turns are available **from inside rotate mode** (its two buttons), so the step must
+  work without tearing the overlay down: when one is open the live `viewer->cropRect()` is
+  the authority and nothing is committed, otherwise the manifest's stored crop is.
+- Quarter turns commute with the free rotation, so the angle rides along untouched. A **flip
+  does not** — mirroring the frame reverses which way the image leans — so the `RotateEdit`'s
+  angle is negated, which makes the new oriented image exactly the mirror of the old one.
+- `QPixmap::trueMatrix(t, w, h)` reproduces the translation Qt adds when transforming, which
+  is used to map the crop rect into the new coordinate space — so the same region stays
+  selected after a rotate/flip.
+- Order matters: the overlay base is re-armed to the new `m_uprightImage` (in
   `rebuildOriented()`) **before** the crop rect is remapped, because `setCropRect()` clamps
-  against the crop base. A 90°/270° rotation swaps width and height, so clamping against the
+  against those bounds. A 90°/270° rotation swaps width and height, so clamping against the
   stale bounds would clip the rotated selection.
-- After remapping, the `CropEdit`'s normalized rect is updated from the (clamped)
-  `viewer->cropRect()`, `rebuildBase()` runs, the manifest is persisted, and the post-crop
-  edits re-render (if any) or `m_baseImage` is pushed via `setDisplayPixmap()`.
-- `OrientationEdit::summary()` (`90° rotation`, `H flip`, `V flip`) feeds the metadata
-  edit-state line.
+- `OrientationEdit::summary()` (`90° rotation`, `H flip`, `V flip`) and
+  `RotateEdit::summary()` (`3.5° straighten`) feed the metadata edit-state line.
 
 ## Black & white conversion
 
@@ -312,7 +391,7 @@ owns its own debounce + render watcher, so two compared images render independen
 - `applyRender()` runs `EditManifest::renderAfterCrop()` (a value copy of the whole manifest)
   via `QtConcurrent::run` + `m_renderWatcher` on `m_baseImage`; the UI never blocks. The
   watcher pushes `m_lastRenderPixmap` to the viewer only when display edits exist, not
-  comparing, and not mid-crop.
+  comparing, and not mid-overlay.
 - **Compare** (`\` or the B&W panel button) toggles `m_comparing` between `m_baseImage` (the
   original colour) and `m_lastRenderPixmap`.
 - B&W is still "active" exactly when the manifest holds a `BwEdit` (`bwActive()`); `W` records
