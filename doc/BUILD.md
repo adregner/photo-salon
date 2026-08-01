@@ -51,8 +51,9 @@ without that format. Point the search at a specific build by passing e.g.
 `-DHEIF_INCLUDE_DIR=… -DHEIF_LIBRARY=…`.
 
 pkg-config is skipped while cross-compiling, so the Windows build never links the host's
-libraries — which is why it has no HEIC/JPEG 2000 support yet. `doc/WINDOWS.md`
-§ Image codec libraries itemizes what has to be built on a Windows machine to finish that.
+libraries. It gets MSVC builds of both codecs from the vendored `codecs.tar.gz` bundle
+that `fetch-windows-deps.sh` unpacks into `windows/codecs/x64/` — see `doc/WINDOWS.md`
+§ Image codec libraries for how that bundle is built and republished.
 
 On macOS `macdeployqt` copies both dylibs (and their transitive dependencies, such as
 `libde265`) into `photo-salon.app/Contents/Frameworks` during `./bundle-macos.sh`, so the
@@ -88,9 +89,10 @@ The macOS and Linux release paths also run `ctest`, where `test_extra_formats` p
 plugins actually register in the built binary — the configure gate guarantees they were
 compiled in, that suite guarantees `QImageReader` can see them.
 
-**The Windows release job now fails on purpose** until the MSVC codec libraries are
-vendored — see `doc/WINDOWS.md` § Image codec libraries. That is the intended behaviour:
-better a red release job than an `.exe` published without HEIC and JPEG 2000.
+The Windows release job passes the same gate using the vendored `codecs.tar.gz` bundle
+(`doc/WINDOWS.md` § Image codec libraries). If that bundle ever goes missing or regresses,
+the job fails rather than publishing an `.exe` without HEIC and JPEG 2000 — which is the
+intended behaviour.
 
 ## Building
 

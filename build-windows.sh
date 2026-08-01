@@ -15,9 +15,9 @@ for dir in windows/msvc/lib windows/sdk/lib/ucrt windows/sdk/lib/um; do
 done
 
 # Set PHOTO_SALON_REQUIRE_CODECS=1 (the release workflow does) to refuse to build
-# an .exe without the HEIC / JPEG 2000 plugins. That currently fails by design:
-# the MSVC codec libraries still have to be vendored into windows/codecs/x64 —
-# see doc/WINDOWS.md § Image codec libraries.
+# an .exe without the HEIC / JPEG 2000 plugins. The MSVC builds of libheif and
+# OpenJPEG they need come from the codecs bundle fetched above into
+# windows/codecs/x64 — see doc/WINDOWS.md § Image codec libraries.
 REQUIRE_CODECS="OFF"
 [[ -n "${PHOTO_SALON_REQUIRE_CODECS:-}" && "${PHOTO_SALON_REQUIRE_CODECS}" != "0" ]] \
     && REQUIRE_CODECS="ON"

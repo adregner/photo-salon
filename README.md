@@ -30,9 +30,9 @@ brew install qt cmake libheif openjpeg
 - [Qt6](https://www.qt.io/download) via Qt Online Installer — select the MSVC 2022 64-bit component
 - [CMake](https://cmake.org/download/)
 - Visual Studio 2022 (Community edition is sufficient)
-- HEIC and JPEG 2000 support additionally needs `libheif` and `OpenJPEG` builds for
-  MSVC — see [`doc/WINDOWS.md`](doc/WINDOWS.md). Without them the Windows build works,
-  minus those two formats.
+- HEIC and JPEG 2000 support needs MSVC builds of `libheif` and `OpenJPEG`. The
+  cross-build downloads a prebuilt bundle automatically; see
+  [`doc/WINDOWS.md`](doc/WINDOWS.md) if you are building natively or rebuilding it.
 
 ## Building
 

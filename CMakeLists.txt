@@ -90,6 +90,12 @@ if(HEIF_FOUND)
         PUBLIC  src/imageformats
         PRIVATE ${HEIF_INCLUDE_DIRS})
     target_link_libraries(photo-salon-heif PUBLIC Qt6::Gui PRIVATE ${HEIF_LIBRARIES})
+    # On Windows heif.h decorates its API with __declspec(dllimport) unless told
+    # the library is static — and the vendored windows/codecs build is static, so
+    # without this every heif_* call looks for a non-existent __imp_ thunk.
+    if(WIN32)
+        target_compile_definitions(photo-salon-heif PRIVATE LIBHEIF_STATIC_BUILD)
+    endif()
 else()
     photo_salon_codec_missing(libheif "HEIF/HEIC"
         "  macOS:  brew install libheif\n  Linux:  apt install libheif-dev  (or libheif-devel)\n")
@@ -105,6 +111,13 @@ if(OPENJPEG_FOUND)
         PUBLIC  src/imageformats
         PRIVATE ${OPENJPEG_INCLUDE_DIRS})
     target_link_libraries(photo-salon-jpeg2000 PUBLIC Qt6::Gui PRIVATE ${OPENJPEG_LIBRARIES})
+    # Same story as LIBHEIF_STATIC_BUILD above: openjpeg.h defaults to
+    # __declspec(dllimport) on Windows unless OPJ_STATIC says otherwise. Keep it
+    # Windows-only — on ELF/Mach-O this macro instead forces hidden visibility,
+    # which is wrong for the shared OpenJPEG we link against there.
+    if(WIN32)
+        target_compile_definitions(photo-salon-jpeg2000 PRIVATE OPJ_STATIC)
+    endif()
 else()
     photo_salon_codec_missing(OpenJPEG "JPEG 2000 (.jpf/.jpx/.jp2)"
         "  macOS:  brew install openjpeg\n  Linux:  apt install libopenjp2-7-dev  (or openjpeg2-devel)\n")

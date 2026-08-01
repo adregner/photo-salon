@@ -32,6 +32,8 @@ windows/
     lib/            ← committed — 5 MSVC runtime import libs
   qt-6.11/
     x64/            ← NOT committed — auto-fetched (330 MB, Qt 6.11.1 static build)
+  codecs/
+    x64/            ← NOT committed — auto-fetched (49 MB, MSVC libheif + OpenJPEG)
 ```
 
 The `lib/` subdirectories contain only the files actually referenced at link time.
@@ -91,75 +93,129 @@ third-party libs by default; enabling them needs their sources fetched separatel
 image-format plugins add no new Windows system-DLL dependencies beyond what `Qt6Gui`
 already pulls in, so no new `windows/sdk/lib/um/` import libs are required.
 
-## Image codec libraries (HEIC / JPEG 2000) — **not yet available on Windows**
+## Image codec libraries (HEIC / JPEG 2000)
 
 HEIC and the JPEG 2000 family are decoded by our own static Qt image plugins in
 `src/imageformats/`, backed by **libheif** and **OpenJPEG** (see
-`doc/ARCHITECTURE.md` § Image format support). Both are found at configure time and
-are optional: the Windows cross-build currently finds neither, prints a CMake warning,
-and produces an `.exe` that works exactly as before **minus those two formats**. macOS
-and Linux get them from Homebrew/apt.
+`doc/ARCHITECTURE.md` § Image format support). macOS and Linux get them from
+Homebrew/apt.
 
-They can't come from the host: `pkg-config` is deliberately not consulted when
-cross-compiling, or a Windows link would pick up the host's Linux `.so`s. So the
-libraries have to be **built on a Windows machine with MSVC** and vendored in, the same
-way the static Qt bundle is.
+They can't come from the host when cross-compiling: `pkg-config` is deliberately not
+consulted, or a Windows link would pick up the host's Linux `.so`s. So MSVC builds are
+vendored in the same way as the static Qt bundle, as
+`s3://photo-salon/_build/windows/codecs.tar.gz` (~8 MB), fetched by
+`fetch-windows-deps.sh` into `windows/codecs/x64/`. The toolchain already searches that
+prefix, so `./build-windows.sh` picks both codecs up with no further steps.
 
-> **The Windows *release* workflow fails until that is done.** `release-windows.yml` sets
-> `PHOTO_SALON_REQUIRE_CODECS=1`, which makes a missing codec a fatal CMake error rather
-> than a warning, so no `.exe` can be published without HEIC and JPEG 2000 support. Plain
-> CI (`ci.yml`) still cross-compiles fine — it leaves the codecs optional — so the
-> Windows build stays verified in the meantime.
+The bundle's own `BUILDINFO.txt` records the exact versions, commits and flags it was
+built with. As shipped:
 
-### What to build and bring back
+| Library | Version | Artifacts |
+|---|---|---|
+| [**libheif**](https://github.com/strukturag/libheif) | 1.23.1 | `lib/heif.lib`, `include/libheif/*.h` |
+| [**libde265**](https://github.com/strukturag/libde265) | 1.0.16 | *merged into* `heif.lib` — see below |
+| [**OpenJPEG**](https://github.com/uclouvain/openjpeg) | 2.5.3 | `lib/openjp2.lib`, `include/openjpeg.h`, `include/opj_config.h` |
 
-All of it x64, **Release**, static (`-DBUILD_SHARED_LIBS=OFF`), and — to match the
-static Qt bundle, which links the CRT dynamically — with
+AVIF support (libaom/dav1d) is **not** included — it is a separate libheif back-end, and
+the goal here is HEIC.
+
+### Rebuilding the bundle
+
+On a Windows machine with MSVC and CMake+Ninja (Qt ships both under `C:\Qt\Tools`), from
+a `vcvars64.bat` shell. Everything x64, **Release**, static (`-DBUILD_SHARED_LIBS=OFF`),
+and — to match the static Qt bundle, which links the CRT dynamically — built with
 `-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL` (`/MD`). Mixing `/MT` and `/MD` in one
-link is what produces the classic duplicate-symbol / heap-mismatch failures.
+link produces the classic duplicate-symbol / heap-mismatch failures.
 
-| # | Library | Artifacts needed | Notes |
-|---|---|---|---|
-| 1 | [**libheif**](https://github.com/strukturag/libheif) (≥ 1.17) | `heif.lib`, headers `libheif/heif.h` + `libheif/heif_version.h` | Configure with `-DWITH_EXAMPLES=OFF -DENABLE_PLUGIN_LOADING=OFF` so the HEVC decoder is linked **in** rather than `dlopen`ed at runtime — a plugin DLL would have to be shipped and found next to the `.exe`. |
-| 2 | [**libde265**](https://github.com/strukturag/libde265) (≥ 1.0.15) | `libde265.lib` | The HEVC decoder libheif needs to decode HEIC at all. Build it first and point libheif's configure at it. |
-| 3 | [**OpenJPEG**](https://github.com/uclouvain/openjpeg) (≥ 2.5) | `openjp2.lib`, headers `openjpeg.h`, `opj_config.h`, `opj_stdint.h` | Configure with `-DBUILD_CODEC=OFF` — only the library is needed, not `opj_compress` and friends. |
-| 4 | Windows SDK import libs | *expected: none new* | libheif, libde265 and OpenJPEG use only the CRT and `kernel32`, which are already vendored. Confirm on the built libs with `dumpbin /directives *.lib \| findstr /i defaultlib`; if a `.lib` that isn't already in `windows/sdk/lib/um/` shows up, copy it in per `doc/BUILD.md` § Windows SDK import libraries. |
+Build **libde265 first**, into a shared staging prefix, then point libheif at it:
 
-AVIF support (libaom/dav1d) is **not** required — it is a separate libheif back-end,
-and the goal here is HEIC.
+```bash
+S=C:/work/stage          # staging prefix all three install into
+COMMON="-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+        -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DCMAKE_INSTALL_PREFIX=$S"
 
-### Where to put them
+cmake -G Ninja -S libde265 -B b1 $COMMON -DENABLE_SDL=OFF
+cmake --build b1 --target install
 
-The cross-compile toolchain already searches `windows/codecs/x64` (both as a
-`CMAKE_PREFIX_PATH` and a find-root), so the vendored tree just needs the standard
-layout:
+# NOTE the LIBDE265_STATIC_BUILD define — see "Static-build defines" below.
+cmake -G Ninja -S libheif -B b2 $COMMON -DCMAKE_PREFIX_PATH=$S \
+  -DCMAKE_C_FLAGS=/DLIBDE265_STATIC_BUILD -DCMAKE_CXX_FLAGS=/DLIBDE265_STATIC_BUILD \
+  -DWITH_EXAMPLES=OFF -DENABLE_PLUGIN_LOADING=OFF -DBUILD_TESTING=OFF \
+  -DWITH_GDK_PIXBUF=OFF -DWITH_LIBDE265=ON
+  # …plus -DWITH_<everything else>=OFF; confirm the configure summary prints
+  #   "Compiling 'libde265' as built-in backend"  and  HEIC decoding YES.
+cmake --build b2 --target install
 
-```
-windows/
-  codecs/
-    x64/
-      include/
-        libheif/heif.h
-        libheif/heif_version.h
-        openjpeg.h
-        opj_config.h
-        opj_stdint.h
-      lib/
-        heif.lib
-        libde265.lib
-        openjp2.lib
+cmake -G Ninja -S openjpeg -B b3 $COMMON -DBUILD_CODEC=OFF -DBUILD_TESTING=OFF
+cmake --build b3 --target install
 ```
 
-With that in place `./build-windows.sh` picks both up with no further changes — the
-CMake warnings disappear and the plugins are compiled into the `.exe`. If a header ends
-up under a versioned subdirectory (OpenJPEG's own install uses `include/openjpeg-2.5/`),
-either flatten it into `include/` or pass
-`-DOPENJPEG_INCLUDE_DIR=<path> -DOPENJPEG_LIBRARY=<path/openjp2.lib>` (and the matching
-`HEIF_*` variables) to CMake.
+`ENABLE_PLUGIN_LOADING=OFF` links the HEVC decoder **in** rather than `dlopen`ing it at
+runtime — a plugin DLL would otherwise have to ship and be found next to the `.exe`.
+`BUILD_CODEC=OFF` skips `opj_compress` and friends; only the library is needed.
 
-Ship the tree the same way as the Qt bundle: tar it up as `codecs.tar.gz`, upload to
-`s3://photo-salon/_build/windows/`, and add a `fetch` line for it in
-`fetch-windows-deps.sh` next to the existing ones.
+Then assemble the tree, **merging libde265 into `heif.lib`**:
+
+```bash
+X=windows/codecs/x64
+mkdir -p $X/include/libheif $X/lib
+lib /OUT:$X/lib/heif.lib $S/lib/heif.lib $S/lib/libde265.lib   # merged, self-contained
+cp $S/lib/openjp2.lib            $X/lib/
+cp $S/include/libheif/*.h        $X/include/libheif/
+cp $S/include/openjpeg-2.5/openjpeg.h $S/include/openjpeg-2.5/opj_config.h $X/include/
+```
+
+The merge matters: libheif references `de265_*` but records no `/DEFAULTLIB` for it, and
+`photo_salon_find_codec` in `CMakeLists.txt` hands the link exactly **one** library path
+per codec — so a separate `libde265.lib` would never be linked and the build would die on
+unresolved `de265_*` symbols. Merging keeps the archive self-contained instead of adding
+Windows-only link plumbing to a cross-platform CMake file. Flattening OpenJPEG's
+versioned `include/openjpeg-2.5/` into `include/` is also deliberate, though
+`photo_salon_find_codec` would find the versioned directory too.
+
+Verify before publishing:
+
+```bash
+dumpbin /directives $X/lib/*.lib | findstr /i defaultlib   # expect only msvcrt/msvcprt/oldnames/uuid
+```
+
+Anything else that appears must be copied into `windows/sdk/lib/um/` per `doc/BUILD.md`
+§ Windows SDK import libraries. As built, none is.
+
+Then re-tar from the directory *above* `codecs/` so the archive root stays
+`codecs/x64/...`, back up the existing object, and publish:
+
+```bash
+B=s3://photo-salon/_build/windows
+tar czf codecs.tar.gz codecs
+aws s3 cp $B/codecs.tar.gz $B/codecs.prebackup.tar.gz   # rollback copy
+aws s3 cp codecs.tar.gz    $B/codecs.tar.gz             # publish
+```
+
+### Static-build defines
+
+Both libraries' public headers decorate their APIs with `__declspec(dllimport)` on
+Windows **unless** told the build is static. Get this wrong and the link fails on
+`__imp_heif_*` / `__imp_opj_*` / `__imp_de265_*` symbols:
+
+| Compiling | Needs |
+|---|---|
+| libheif (against static libde265) | `LIBDE265_STATIC_BUILD` |
+| our plugins (against static libheif) | `LIBHEIF_STATIC_BUILD` |
+| our plugins (against static OpenJPEG) | `OPJ_STATIC` |
+
+The last two are set for us — `CMakeLists.txt` adds them to the plugin targets under
+`if(WIN32)`. They are deliberately **not** set on macOS/Linux, where the codecs are shared
+libraries and `OPJ_STATIC` would instead force hidden visibility.
+
+### Do not downgrade libheif below 1.23
+
+libheif **1.19.8** was tried first and rejected. Built exactly as above, an executable
+linking both it and OpenJPEG died with an access violation *before reaching `main()`*, in
+static initialisation. The fault was layout-sensitive — it moved or disappeared with
+unrelated compiler and linker flags, and each library on its own was fine — which points
+at memory corruption in libheif's own static init rather than anything in this project.
+1.23.1 is stable across every variant tried. Re-test before changing versions.
 
 ### Bundle upload
 

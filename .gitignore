@@ -11,6 +11,7 @@ CLAUDE.local.md
 windows/qt-6.11/
 windows/msvc/include/
 windows/sdk/include/
+windows/codecs/
 
 qt-linux/
 
