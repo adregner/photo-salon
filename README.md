@@ -9,22 +9,30 @@ A cross-platform minimalistic desktop photo viewing application to facilitate in
 CMake and a C++ compiler are required. Qt 6.11+ will be fetched automatically by the build script if the system version is too old.
 
 ```bash
-sudo apt install cmake g++
+sudo apt install cmake g++ libheif-dev libheif-plugin-libde265 libopenjp2-7-dev
 ```
+
+`libheif` and `OpenJPEG` add HEIC and JPEG 2000 (`.jpf`) support. They are optional —
+without them the build succeeds and simply cannot open those two formats. Debian and
+Ubuntu split libheif's HEVC decoder into `libheif-plugin-libde265`, which is loaded at
+runtime; without it HEIC files are recognised but fail to decode.
 
 ### macOS
 
 - [Homebrew](https://brew.sh/)
-- Qt 6.11+ and CMake:
+- Qt 6.11+, CMake, and the HEIC / JPEG 2000 codecs:
 
 ```bash
-brew install qt cmake
+brew install qt cmake libheif openjpeg
 ```
 
 ### Windows
 - [Qt6](https://www.qt.io/download) via Qt Online Installer — select the MSVC 2022 64-bit component
 - [CMake](https://cmake.org/download/)
 - Visual Studio 2022 (Community edition is sufficient)
+- HEIC and JPEG 2000 support needs MSVC builds of `libheif` and `OpenJPEG`. The
+  cross-build downloads a prebuilt bundle automatically; see
+  [`doc/WINDOWS.md`](doc/WINDOWS.md) if you are building natively or rebuilding it.
 
 ## Building
 
@@ -113,7 +121,9 @@ A **Developer ID** certificate requires an Apple Developer Program membership. N
 photo-salon <image.jpg>
 ```
 
-Opens the specified JPEG image in a resizable window, scaled to fit.
+Opens the specified image in a resizable window, scaled to fit. JPEG, PNG, TIFF, WebP
+and the other formats Qt reads are supported, plus **HEIC/HEIF** (iPhone photos) and the
+**JPEG 2000** family — `.jpf`, `.jpx`, `.jp2`, `.j2k`.
 
 Edits are **non-destructive and remembered per image**: rotation, flips, crop, light/level
 and colour adjustments, and the black-&-white look are tracked in an internal change manifest

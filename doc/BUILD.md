@@ -28,6 +28,72 @@ Platform-specific sources:
 | **easyexif** | root `CMakeLists.txt` | commit `cd994a3…` | Single-file JPEG EXIF parser (`exif.cpp`). |
 | **exif-py samples** | `tests/CMakeLists.txt` | commit `2adb9d1…` | Real-camera JPEGs for `test_exif_reader`; path passed as `EXIF_SAMPLES_DIR`. |
 
+### Optional system dependencies (image codecs)
+
+Two decoders Qt doesn't ship are built from `src/imageformats/` as static Qt image
+plugins (see `doc/ARCHITECTURE.md` § Image format support):
+
+| Library | Adds | Install |
+|---|---|---|
+| **libheif** | HEIF/HEIC | `brew install libheif` · `apt install libheif-dev libheif-plugin-libde265` |
+| **OpenJPEG** | JPEG 2000 — `.jpf` `.jpx` `.jp2` `.j2k` `.j2c` | `brew install openjpeg` · `apt install libopenjp2-7-dev` |
+
+On Debian/Ubuntu libheif's HEVC decoder is a *separate* package it `dlopen`s at runtime
+(`libheif-plugin-libde265`). Without it a HEIC file is recognised — `QImageReader::size()`
+even works — but decoding fails; the handler logs libheif's reason. Homebrew's libheif
+links the decoder in, so macOS needs nothing extra.
+
+Both are optional. `photo_salon_find_codec()` in the root `CMakeLists.txt` looks for each
+with pkg-config, then with a plain header/library search; a miss prints a warning, skips
+that plugin, and leaves the corresponding `PHOTO_SALON_HAVE_HEIF` /
+`PHOTO_SALON_HAVE_JPEG2000` compile definition undefined — the build still succeeds, just
+without that format. Point the search at a specific build by passing e.g.
+`-DHEIF_INCLUDE_DIR=… -DHEIF_LIBRARY=…`.
+
+pkg-config is skipped while cross-compiling, so the Windows build never links the host's
+libraries. It gets MSVC builds of both codecs from the vendored `codecs.tar.gz` bundle
+that `fetch-windows-deps.sh` unpacks into `windows/codecs/x64/` — see `doc/WINDOWS.md`
+§ Image codec libraries for how that bundle is built and republished.
+
+On macOS `macdeployqt` copies both dylibs (and their transitive dependencies, such as
+`libde265`) into `photo-salon.app/Contents/Frameworks` during `./bundle-macos.sh`, so the
+released bundle is self-contained.
+
+#### Codecs are mandatory for release binaries
+
+Optional is fine while developing; a *published* binary must never be missing a format it
+advertises. `PHOTO_SALON_REQUIRE_CODECS` turns every "not found" warning above into a
+configure-time `FATAL_ERROR`:
+
+```bash
+PHOTO_SALON_REQUIRE_CODECS=1 ./build            # or ./build-windows.sh
+cmake -B _build -DPHOTO_SALON_REQUIRE_CODECS=ON # same thing, directly
+```
+
+Both `build` and `build-windows.sh` forward the environment variable to CMake, and it is
+set in three places, so no release path can skip it:
+
+| Where | What it covers |
+|---|---|
+| `bundle-macos.sh` | Sets it unconditionally — everything that script produces is a distributable |
+| `release-macos.yml` | Job-level `env:`, so the plain `./build` + `ctest` step is gated too |
+| `release-windows.yml` | Job-level `env:` on both the Linux test job and the cross-compile job |
+
+`bundle-macos.sh` then adds an artifact-level check after `macdeployqt`, because a
+successful configure only proves the codecs existed on the *build* machine: it verifies
+the app binary's `libheif` / `libopenjp2` references were rewritten to `@executable_path`
+(or `@rpath`) and that matching dylibs really landed in `Contents/Frameworks`. A bundle
+that would open HEICs on the build Mac and nowhere else fails there, before signing.
+
+The macOS and Linux release paths also run `ctest`, where `test_extra_formats` proves the
+plugins actually register in the built binary — the configure gate guarantees they were
+compiled in, that suite guarantees `QImageReader` can see them.
+
+The Windows release job passes the same gate using the vendored `codecs.tar.gz` bundle
+(`doc/WINDOWS.md` § Image codec libraries). If that bundle ever goes missing or regresses,
+the job fails rather than publishing an `.exe` without HEIC and JPEG 2000 — which is the
+intended behaviour.
+
 ## Building
 
 ```bash
@@ -63,8 +129,13 @@ QT_QPA_PLATFORM=offscreen ./_build/tests/test_crop_tool
 
 Current suites (in `tests/`): `test_zoom`, `test_help_overlay`, `test_image_formats`,
 `test_folder_navigation`, `test_open_folder`, `test_fullscreen`, `test_background_color`,
-`test_crop_tool`, `test_bw_converter`, `test_exif_reader`, `test_external_launch`. New tests link
-`photo-salon-lib` + `Qt6::Test` and should set the offscreen platform property.
+`test_crop_tool`, `test_bw_converter`, `test_exif_reader`, `test_external_launch`,
+`test_extra_formats`. New tests link `photo-salon-lib` + `Qt6::Test` and should set the
+offscreen platform property.
+
+`test_extra_formats` covers the HEIF / JPEG 2000 plugins against the small committed
+fixtures in `tests/resources/` (see the README there for how each was generated); its
+cases skip themselves when the matching codec wasn't found at configure time.
 
 ## Packaging
 

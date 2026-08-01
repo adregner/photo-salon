@@ -33,8 +33,11 @@ for arg in "$@"; do
 done
 
 # ── 1. Build ───────────────────────────────────────────────────────────────────
+# Everything this script produces is a distributable, so the image codecs are
+# mandatory here: CMake fails outright if libheif or OpenJPEG is missing rather
+# than quietly dropping HEIC / JPEG 2000 from the shipped app.
 echo "→ Building…"
-"$SCRIPT_DIR/build"
+PHOTO_SALON_REQUIRE_CODECS=1 "$SCRIPT_DIR/build"
 
 # ── 2. Locate macdeployqt ──────────────────────────────────────────────────────
 MACDEPLOYQT=""
@@ -67,6 +70,39 @@ cp -R "$BUILD_DIR/photo-salon.app" "$APP"
 # ── 4. Deploy Qt frameworks ────────────────────────────────────────────────────
 echo "→ Deploying Qt frameworks…"
 "$MACDEPLOYQT" "$APP"
+
+# ── 4b. Verify the image codecs shipped ────────────────────────────────────────
+# The build already refused to configure without libheif/OpenJPEG, but that only
+# covers this machine: macdeployqt still has to copy the dylibs into the bundle
+# and rewrite the executable's load paths. Miss that and the app opens HEICs here
+# and nowhere else — so check both halves before anything gets signed.
+echo "→ Verifying HEIC / JPEG 2000 codecs…"
+BIN="$APP/Contents/MacOS/photo-salon"
+for lib in libheif libopenjp2; do
+    refs="$(otool -L "$BIN" | awk -v l="$lib" '$1 ~ l { print $1 }')"
+    if [[ -z "$refs" ]]; then
+        echo "error: $BIN does not link $lib — the bundle would ship without that" >&2
+        echo "       image format. (A statically linked codec would look the same;" >&2
+        echo "       adjust this check if the build ever switches to one.)" >&2
+        exit 1
+    fi
+    while IFS= read -r ref; do
+        case "$ref" in
+            @executable_path/*|@loader_path/*|@rpath/*) ;;
+            *)
+                echo "error: $BIN still references $ref outside the bundle —" >&2
+                echo "       macdeployqt did not relocate $lib." >&2
+                exit 1
+                ;;
+        esac
+    done <<< "$refs"
+    if ! ls "$APP/Contents/Frameworks" 2>/dev/null | grep -q "$lib"; then
+        echo "error: no $lib dylib in $APP/Contents/Frameworks — the app would not" >&2
+        echo "       launch on a Mac without Homebrew." >&2
+        exit 1
+    fi
+done
+echo "   ✓ libheif and OpenJPEG bundled"
 
 # ── 5. Code sign (optional) ────────────────────────────────────────────────────
 # Sign all nested components (frameworks, plugins, dylibs) first, then the bundle.

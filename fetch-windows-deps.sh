@@ -18,5 +18,6 @@ echo "Checking Windows cross-compilation dependencies..."
 fetch msvc-include.tar.gz msvc/include
 fetch sdk-include.tar.gz  sdk/include
 fetch qt-6.11.tar.gz      qt-6.11/x64
+fetch codecs.tar.gz       codecs/x64
 
 echo "Done."

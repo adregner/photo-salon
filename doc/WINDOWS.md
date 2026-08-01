@@ -32,6 +32,8 @@ windows/
     lib/            ← committed — 5 MSVC runtime import libs
   qt-6.11/
     x64/            ← NOT committed — auto-fetched (330 MB, Qt 6.11.1 static build)
+  codecs/
+    x64/            ← NOT committed — auto-fetched (49 MB, MSVC libheif + OpenJPEG)
 ```
 
 The `lib/` subdirectories contain only the files actually referenced at link time.
@@ -90,6 +92,162 @@ newer toolset consistently — any MSVC v14x is forward binary-compatible).
 third-party libs by default; enabling them needs their sources fetched separately. The
 image-format plugins add no new Windows system-DLL dependencies beyond what `Qt6Gui`
 already pulls in, so no new `windows/sdk/lib/um/` import libs are required.
+
+## Image codec libraries (HEIC / JPEG 2000)
+
+HEIC and the JPEG 2000 family are decoded by our own static Qt image plugins in
+`src/imageformats/`, backed by **libheif** and **OpenJPEG** (see
+`doc/ARCHITECTURE.md` § Image format support). macOS and Linux get them from
+Homebrew/apt.
+
+They can't come from the host when cross-compiling: `pkg-config` is deliberately not
+consulted, or a Windows link would pick up the host's Linux `.so`s. So MSVC builds are
+vendored in the same way as the static Qt bundle, as
+`s3://photo-salon/_build/windows/codecs.tar.gz` (~8 MB), fetched by
+`fetch-windows-deps.sh` into `windows/codecs/x64/`. The toolchain already searches that
+prefix, so `./build-windows.sh` picks both codecs up with no further steps.
+
+The bundle's own `BUILDINFO.txt` records the exact versions, commits and flags it was
+built with. As shipped:
+
+| Library | Version | Artifacts |
+|---|---|---|
+| [**libheif**](https://github.com/strukturag/libheif) | 1.23.1 | `lib/heif.lib`, `include/libheif/*.h` |
+| [**libde265**](https://github.com/strukturag/libde265) | 1.0.16 | `lib/libde265.lib` — linked explicitly, see below |
+| [**OpenJPEG**](https://github.com/uclouvain/openjpeg) | 2.5.3 | `lib/openjp2.lib`, `include/openjpeg.h`, `include/opj_config.h` |
+
+AVIF support (libaom/dav1d) is **not** included — it is a separate libheif back-end, and
+the goal here is HEIC.
+
+### Rebuilding the bundle
+
+On a Windows machine with MSVC and CMake+Ninja (Qt ships both under `C:\Qt\Tools`), from
+a `vcvars64.bat` shell. Everything x64, **Release**, static (`-DBUILD_SHARED_LIBS=OFF`),
+and — to match the static Qt bundle, which links the CRT dynamically — built with
+`-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL` (`/MD`). Mixing `/MT` and `/MD` in one
+link produces the classic duplicate-symbol / heap-mismatch failures.
+
+Build **libde265 first**, into a shared staging prefix, then point libheif at it:
+
+```bash
+S=C:/work/stage          # staging prefix all three install into
+COMMON="-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+        -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DCMAKE_INSTALL_PREFIX=$S"
+
+cmake -G Ninja -S libde265 -B b1 $COMMON -DENABLE_SDL=OFF
+cmake --build b1 --target install
+
+# NOTE the LIBDE265_STATIC_BUILD define — see "Static-build defines" below.
+cmake -G Ninja -S libheif -B b2 $COMMON -DCMAKE_PREFIX_PATH=$S \
+  -DCMAKE_C_FLAGS=/DLIBDE265_STATIC_BUILD -DCMAKE_CXX_FLAGS=/DLIBDE265_STATIC_BUILD \
+  -DWITH_EXAMPLES=OFF -DENABLE_PLUGIN_LOADING=OFF -DBUILD_TESTING=OFF \
+  -DWITH_GDK_PIXBUF=OFF -DWITH_LIBDE265=ON
+  # …plus -DWITH_<everything else>=OFF; confirm the configure summary prints
+  #   "Compiling 'libde265' as built-in backend"  and  HEIC decoding YES.
+cmake --build b2 --target install
+
+cmake -G Ninja -S openjpeg -B b3 $COMMON -DBUILD_CODEC=OFF -DBUILD_TESTING=OFF
+cmake --build b3 --target install
+```
+
+`ENABLE_PLUGIN_LOADING=OFF` links the HEVC decoder **in** rather than `dlopen`ing it at
+runtime — a plugin DLL would otherwise have to ship and be found next to the `.exe`.
+`BUILD_CODEC=OFF` skips `opj_compress` and friends; only the library is needed.
+
+Then assemble the tree:
+
+```bash
+X=windows/codecs/x64
+mkdir -p $X/include/libheif $X/lib
+cp $S/lib/heif.lib $S/lib/libde265.lib $S/lib/openjp2.lib  $X/lib/
+cp $S/include/libheif/*.h                                  $X/include/libheif/
+cp $S/include/openjpeg-2.5/openjpeg.h $S/include/openjpeg-2.5/opj_config.h $X/include/
+```
+
+`libde265.lib` ships **beside** `heif.lib`, and both get linked: libheif references
+`de265_*` but records no `/DEFAULTLIB` for it, so nothing would otherwise pull it in.
+`photo_salon_find_codec` hands the link one library path per codec, so `CMakeLists.txt`
+finds and links libde265 explicitly under `if(WIN32)`.
+
+> Do **not** merge them into a single archive with `lib /OUT:`. An earlier revision did,
+> and the result contained two members both named `bitstream.cc.obj` — libheif and
+> libde265 each have a `bitstream.cc`. Duplicate member names in an archive are a
+> correctness hazard.
+
+Flattening OpenJPEG's versioned `include/openjpeg-2.5/` into `include/` is deliberate,
+though `photo_salon_find_codec` would find the versioned directory too.
+
+Verify before publishing:
+
+```bash
+dumpbin /directives $X/lib/*.lib | findstr /i defaultlib   # expect only msvcrt/msvcprt/oldnames/uuid
+dumpbin /symbols $X/lib/heif.lib | findstr UNDEF | findstr __std_   # see § Toolset below
+```
+
+Anything new in the first must be copied into `windows/sdk/lib/um/` per `doc/BUILD.md`
+§ Windows SDK import libraries. As built, none is.
+
+### Toolset — the codecs must not outrun the vendored runtime
+
+The bundle is built with MSVC 14.51, but `windows/msvc/lib/msvcprt.lib` predates that
+toolset. Newer STL headers call vectorized algorithm helpers that live in `msvcp140.dll`
+— `__std_rotate` and `__std_unique_4` are **not** in the vendored import lib, so the
+cross-link fails with undefined symbols. The bundle is therefore compiled with
+`-D_USE_STD_VECTOR_ALGORITHMS=0`, which makes the STL use its header-only
+implementations. That keeps the codecs compatible with the vendored import libs without
+raising the VC++ redistributable version end users need.
+
+Check every `__std_*` reference against what is actually vendored:
+
+```bash
+dumpbin /linkermember:1 windows/msvc/lib/msvcprt.lib | findstr __std_
+```
+
+Building with a toolset matching the static Qt bundle's (**14.44**) would avoid the
+mismatch at source, and is the better fix if this box ever gets that toolset installed.
+
+> **Known issue — native MSVC consumers.** An `.exe` compiled with MSVC 14.51 that links
+> libheif can hit an access violation during static initialisation, before `main()`. It is
+> layout-sensitive: it appears and disappears with unrelated flags on the *consumer*, and
+> the faulting read sits a couple of bytes below the module base. libde265 and OpenJPEG
+> alone never reproduce it, and it happens with libheif 1.19.8 and 1.23.1 alike — so it
+> reads as a libheif/toolset interaction, not a property of this bundle's configuration.
+> It has not been seen to affect the shipping path, which cross-compiles with clang-cl and
+> lld-link rather than MSVC. Rebuilding under toolset 14.44 is the untested next step.
+
+Then re-tar from the directory *above* `codecs/` so the archive root stays
+`codecs/x64/...`, back up the existing object, and publish:
+
+```bash
+B=s3://photo-salon/_build/windows
+tar czf codecs.tar.gz codecs
+aws s3 cp $B/codecs.tar.gz $B/codecs.prebackup.tar.gz   # rollback copy
+aws s3 cp codecs.tar.gz    $B/codecs.tar.gz             # publish
+```
+
+### Static-build defines
+
+Both libraries' public headers decorate their APIs with `__declspec(dllimport)` on
+Windows **unless** told the build is static. Get this wrong and the link fails on
+`__imp_heif_*` / `__imp_opj_*` / `__imp_de265_*` symbols:
+
+| Compiling | Needs |
+|---|---|
+| libheif (against static libde265) | `LIBDE265_STATIC_BUILD` |
+| our plugins (against static libheif) | `LIBHEIF_STATIC_BUILD` |
+| our plugins (against static OpenJPEG) | `OPJ_STATIC` |
+
+The last two are set for us — `CMakeLists.txt` adds them to the plugin targets under
+`if(WIN32)`. They are deliberately **not** set on macOS/Linux, where the codecs are shared
+libraries and `OPJ_STATIC` would instead force hidden visibility.
+
+### Why 1.23.1 rather than 1.19.8
+
+libheif **1.19.8** was built first. A release-mode app linking it and OpenJPEG crashed
+in every run of the codec tests; the same app against 1.23.1 passed them repeatedly, so
+the bundle ships 1.23.1. Note that this is *not* a clean bill of health for 1.23.1 — the
+static-init access violation described under § Toolset reproduces on both versions in
+some consumer build configurations. Version choice mitigated it; it did not fix it.
 
 ### Bundle upload
 

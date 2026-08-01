@@ -26,6 +26,9 @@ jobs:
       contents: write
     env:
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      # Release binaries must ship the HEIC / JPEG 2000 plugins: a missing codec
+      # fails the CMake configure instead of silently dropping the format.
+      PHOTO_SALON_REQUIRE_CODECS: 1
 
     steps:
       - uses: actions/checkout@v4
@@ -37,8 +40,8 @@ jobs:
           path: ~/qt-mac
           key: qt-mac-6.11.1-${{ runner.arch }}
 
-      - name: Install cmake
-        run: brew install cmake
+      - name: Install cmake and image codecs
+        run: brew install cmake libheif openjpeg
 
       - name: Install Qt
         if: steps.qt-cache.outputs.cache-hit != 'true'

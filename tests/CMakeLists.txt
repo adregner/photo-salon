@@ -124,6 +124,15 @@ add_test(NAME test_adjust_panel COMMAND test_adjust_panel)
 set_tests_properties(test_adjust_panel PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+qt_add_executable(test_extra_formats test_extra_formats.cpp)
+target_link_libraries(test_extra_formats PRIVATE Qt6::Test photo-salon-lib)
+# Small HEIF / JPEG 2000 fixtures live next to the tests; see resources/README.md.
+target_compile_definitions(test_extra_formats PRIVATE
+    EXTRA_FORMAT_SAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources")
+add_test(NAME test_extra_formats COMMAND test_extra_formats)
+set_tests_properties(test_extra_formats PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 qt_add_executable(test_compare test_compare.cpp)
 target_link_libraries(test_compare PRIVATE Qt6::Test photo-salon-lib)
 add_test(NAME test_compare COMMAND test_compare)

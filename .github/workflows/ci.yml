@@ -14,8 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cmake
-        run: brew install cmake
+      - name: Install cmake and image codecs
+        run: brew install cmake libheif openjpeg
 
       - name: Cache Qt
         id: qt-cache
@@ -55,7 +55,7 @@ jobs:
           key: qt-linux-6.11.1-gcc_64
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake libgl1-mesa-dev
+        run: sudo apt-get update && sudo apt-get install -y cmake libgl1-mesa-dev libheif-dev libheif-plugin-libde265 libopenjp2-7-dev
 
       - name: Build
         run: ./build

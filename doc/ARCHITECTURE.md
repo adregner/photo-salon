@@ -445,6 +445,42 @@ The **"Open in..."** external-editor feature exports the edited image to a temp 
 `writeExportForExternalApp()` in `MainWindow.cpp`). On Windows the bundled Qt must
 include the `qtiff` plugin for this export to work at runtime — see `doc/WINDOWS.md`.
 
+### HEIC and JPEG 2000 — our own plugins
+
+Qt ships no decoder for HEIF/HEIC (iPhone photos) or the JPEG 2000 family, so
+`src/imageformats/` supplies two of its own:
+
+| Plugin | Formats | Back-end |
+|---|---|---|
+| `HeifPlugin` (`HeifPlugin.{h,cpp}`, keys `heic` `heif` `hif`) | HEIF/HEIC | **libheif** |
+| `Jpeg2000Plugin` (`Jpeg2000Plugin.{h,cpp}`, keys `jpf` `jpx` `jp2` `j2k` `j2c`) | JPEG 2000 Part 1 & 2, raw codestreams | **OpenJPEG** |
+
+Both are **`QImageIOPlugin`s built as static Qt plugins** (`qt_add_plugin(... STATIC)`).
+CMake generates the `Q_IMPORT_PLUGIN` initializer and propagates it to everything that
+links `photo-salon-lib`, so the app *and* every test binary register them at startup.
+That is the whole point of the plugin shape: `QImageReader` gains the formats, and
+`supportedExtensions()`, folder navigation, both file dialogs and `ExifReader` pick them
+up with **no call-site changes**. Each handler also sniffs the file signature
+(`canRead(QIODevice*)`), so a mislabelled file still opens.
+
+Both back-ends are **optional at configure time**. CMake looks for them with pkg-config
+first, then a plain header/library search; a missing one prints a warning, skips that
+plugin, and drops the matching `PHOTO_SALON_HAVE_HEIF` / `PHOTO_SALON_HAVE_JPEG2000`
+compile definition. pkg-config is skipped when cross-compiling so a Windows link can
+never pick up the host's libraries — which is why the Windows build has no HEIC/JPF yet
+(see `doc/WINDOWS.md`).
+
+Two decoding details worth knowing:
+
+- **Orientation.** libheif applies the container's own rotate/mirror properties while
+  decoding, so `HeifHandler` deliberately does *not* report `ImageTransformation`.
+  Reporting the EXIF orientation on top would rotate such files twice under
+  `QImageReader::setAutoTransform(true)`.
+- **EXIF.** HEIF stores EXIF in a metadata *item*, not a JPEG APP1 segment, so easyexif
+  finds nothing in the raw file. `heifExifSegment()` extracts the block, prefixes the
+  `"Exif\0\0"` marker easyexif expects, and `ExifReader::read()` falls back to it — the
+  metadata overlay works the same on HEIC as on JPEG.
+
 ## Adding a feature — checklist
 
 1. If it reacts to a key, add the case to `ImageViewer::keyPressEvent` and **emit a

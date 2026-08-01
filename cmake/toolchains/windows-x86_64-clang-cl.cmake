@@ -33,8 +33,15 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 # Qt 6.11.1 static Windows install — pre-compiled on Windows, in-tree
 get_filename_component(_project_root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(_qt_prefix "${_project_root}/windows/qt-6.11/x64")
-set(CMAKE_PREFIX_PATH    "${_qt_prefix}")
-set(CMAKE_FIND_ROOT_PATH "${_qt_prefix}")
+
+# Optional MSVC builds of libheif / OpenJPEG, in the usual include+lib layout.
+# Absent today, so HEIC and JPEG 2000 are simply skipped on Windows; dropping the
+# prefix in here is all it takes to enable them — see
+# doc/WINDOWS.md § Image codec libraries.
+set(_codec_prefix "${_project_root}/windows/codecs/x64")
+
+set(CMAKE_PREFIX_PATH    "${_qt_prefix}" "${_codec_prefix}")
+set(CMAKE_FIND_ROOT_PATH "${_qt_prefix}" "${_codec_prefix}")
 
 # lld-link flags: Windows SDK UM libraries, MSVC runtime libs, x64 machine, subsystem
 set(_win_sdk_um   "${_project_root}/windows/sdk/lib/um")

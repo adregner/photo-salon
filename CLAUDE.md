@@ -30,6 +30,13 @@ cd _build && ctest --output-on-failure   # run the test suite (headless)
 
 - Qt 6.11+ required. On Linux `./build` auto-fetches it; on macOS it prints
   `brew install qt` and exits.
+- Optional codecs: `libheif` + `OpenJPEG` (`brew install libheif openjpeg`,
+  `apt install libheif-dev libheif-plugin-libde265 libopenjp2-7-dev`). Missing ones only
+  drop that format — CMake warns and carries on. The Windows cross-build gets MSVC builds
+  of both from the vendored `codecs.tar.gz` bundle; see `doc/WINDOWS.md`.
+- **Release builds require them**: `PHOTO_SALON_REQUIRE_CODECS=1 ./build` (set by
+  `bundle-macos.sh` and both release workflows) turns a missing codec into a fatal
+  configure error, so no published binary lacks a format it advertises.
 - Tests are Qt Test binaries run with `QT_QPA_PLATFORM=offscreen` (CTest sets this).
 - Regenerate `compile_commands.json` when stale:
   `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .`
@@ -41,7 +48,9 @@ cd _build && ctest --output-on-failure   # run the test suite (headless)
 - C++17, Qt6 only — no Qt5 shims, no qmake/`.pro` files, CMake only.
 - Source in `src/`; tests in `tests/` (link `photo-salon-lib`, not `main.cpp`).
 - Project docs in `doc/*.md`. Keep `CLAUDE.md` lean — put depth in `doc/`.
-- Loads **any format Qt's image plugins support** (JPEG primary; PNG etc. work too).
+- Loads **any format Qt's image plugins support** (JPEG primary; PNG etc. work too),
+  plus **HEIC/HEIF** and the **JPEG 2000** family (`.jpf`/`.jpx`/`.jp2`/`.j2k`) via the
+  static plugins in `src/imageformats/` (libheif + OpenJPEG; optional at build time).
   Folder navigation excludes `*.svg`.
 - When adding a feature, check whether `README.md`, `CLAUDE.md`, `ROADMAP.md`, and the
   `HelpOverlay` shortcut list need updating.
@@ -135,4 +144,5 @@ the main thread (`QtConcurrent` + `QFutureWatcher`), like B&W.
 | Windows cross-compile & code signing | `doc/WINDOWS.md` |
 | End-user install / run / packaging | `README.md` |
 | Per-image state & compare panes | `src/ImagePane.h`, `src/CompareTabBar.h`, `doc/ARCHITECTURE.md` |
+| HEIC & JPEG 2000 decoders (static Qt image plugins) | `src/imageformats/`, `doc/ARCHITECTURE.md` |
 | Planned & researched features | `ROADMAP.md` |
