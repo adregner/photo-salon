@@ -93,8 +93,19 @@ if(HEIF_FOUND)
     # On Windows heif.h decorates its API with __declspec(dllimport) unless told
     # the library is static — and the vendored windows/codecs build is static, so
     # without this every heif_* call looks for a non-existent __imp_ thunk.
+    #
+    # That static libheif also needs libde265 named explicitly: it references
+    # de265_* but records no /DEFAULTLIB for it, so nothing would pull it in.
+    # Everywhere else libheif is a shared library that carries the dependency itself.
     if(WIN32)
         target_compile_definitions(photo-salon-heif PRIVATE LIBHEIF_STATIC_BUILD)
+        find_library(DE265_LIBRARY NAMES libde265 de265)
+        if(NOT DE265_LIBRARY)
+            message(FATAL_ERROR
+                "libheif was found but libde265 was not. The static Windows libheif "
+                "cannot decode HEIC without it — see doc/WINDOWS.md § Image codec libraries.")
+        endif()
+        target_link_libraries(photo-salon-heif PRIVATE ${DE265_LIBRARY})
     endif()
 else()
     photo_salon_codec_missing(libheif "HEIF/HEIC"
