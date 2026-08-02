@@ -30,18 +30,31 @@ set(CMAKE_AR "${_llvm_bin}/llvm-lib")
 # Prevent CMake from trying to run cross-compiled test executables on the host
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-# Qt 6.11.1 static Windows install — pre-compiled on Windows, in-tree
+# Qt 6.11.1 static Windows install — pre-compiled on Windows, fetched into the
+# tree by fetch-windows-deps.sh. The major.minor is part of the path so a Qt
+# bump lands in a new directory rather than silently reusing the old one; bump
+# it here and in windows/toolchain/versions.psd1 together.
 get_filename_component(_project_root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(_qt_prefix "${_project_root}/windows/qt-6.11/x64")
 
-# Optional MSVC builds of libheif / OpenJPEG, in the usual include+lib layout.
-# Absent today, so HEIC and JPEG 2000 are simply skipped on Windows; dropping the
-# prefix in here is all it takes to enable them — see
-# doc/WINDOWS.md § Image codec libraries.
+# MSVC builds of libheif / libde265 / OpenJPEG, in the usual include+lib layout.
+# See doc/WINDOWS.md § Image codecs.
 set(_codec_prefix "${_project_root}/windows/codecs/x64")
 
 set(CMAKE_PREFIX_PATH    "${_qt_prefix}" "${_codec_prefix}")
 set(CMAKE_FIND_ROOT_PATH "${_qt_prefix}" "${_codec_prefix}")
+
+# Static CRT. This is what makes photo-salon.exe standalone: with the default
+# MultiThreadedDLL the binary imports msvcp140.dll and vcruntime140.dll, which
+# come from the Visual C++ Redistributable and are not present on a stock
+# Windows install. /MT links libcmt + libcpmt + libvcruntime + libucrt in
+# instead, so nothing ships beside the .exe.
+#
+# The Qt in windows/qt-6.11 is built with -static-runtime to match. Mixing the
+# two linkages in one binary produces duplicate-symbol and heap-mismatch
+# failures, so this must stay in step with CrtLinkage in
+# windows/toolchain/versions.psd1.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "")
 
 # lld-link flags: Windows SDK UM libraries, MSVC runtime libs, x64 machine, subsystem
 set(_win_sdk_um   "${_project_root}/windows/sdk/lib/um")

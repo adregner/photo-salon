@@ -86,10 +86,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            windows/msvc/include
-            windows/sdk/include
+            windows/msvc
+            windows/sdk
             windows/qt-6.11
-          key: windows-cross-deps-${{ hashFiles('fetch-windows-deps.sh') }}
+            windows/codecs
+            windows/.*.sha256
+          key: windows-cross-deps-${{ hashFiles('windows-deps.lock') }}
 
       - name: Fetch windows deps
         run: ./fetch-windows-deps.sh
