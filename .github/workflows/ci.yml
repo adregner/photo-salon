@@ -125,3 +125,20 @@ jobs:
 
       - name: Verify exe was produced
         run: test -f _build_win/photo-salon.exe && file _build_win/photo-salon.exe
+
+      # The .exe links the CRT statically so it runs on a stock Windows install.
+      # build-windows.sh already fails on a regression; print the import table too,
+      # so a run's log shows exactly what the binary depends on without a download.
+      - name: Show DLL imports
+        run: |
+          /usr/lib/llvm-20/bin/llvm-readobj --coff-imports _build_win/photo-salon.exe \
+            | sed -n 's/^ *Name: //p' | sort -u
+
+      # Uploaded so the cross-compiled binary can actually be run on Windows —
+      # nothing else in CI executes it. Unsigned, hence the short retention.
+      - name: Upload cross-compiled exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: photo-salon-windows-unsigned
+          path: _build_win/photo-salon.exe
+          retention-days: 7
