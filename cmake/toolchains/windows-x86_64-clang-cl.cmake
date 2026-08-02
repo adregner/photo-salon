@@ -12,15 +12,51 @@ set(_cmake_dir "${CMAKE_CURRENT_LIST_DIR}/..")
 set(CMAKE_C_COMPILER   "${_cmake_dir}/clang-cl-win.sh")
 set(CMAKE_CXX_COMPILER "${_cmake_dir}/clang-cl-win.sh")
 
-# Platform-specific LLVM tool locations and Qt host path
+# Platform-specific LLVM tool locations and Qt host path.
+#
+# The vendored MSVC STL headers hard-require a minimum Clang version (14.51
+# wants Clang 20 — see cmake/clang-cl-win.sh), so this floor moves together with
+# MsvcToolset in windows/toolchain/versions.psd1.
+set(_photo_salon_min_llvm 20)
+
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
     set(_llvm_bin "/opt/homebrew/opt/llvm/bin")
-    set(CMAKE_LINKER "/opt/homebrew/opt/lld@21/bin/lld-link")
+    # Homebrew's lld is keg-only and versioned; prefer whatever llvm ships, then
+    # fall back to a versioned formula.
+    find_program(_lld_link NAMES lld-link
+        PATHS "${_llvm_bin}" /opt/homebrew/opt/lld/bin /opt/homebrew/opt/lld@21/bin
+        NO_DEFAULT_PATH)
+    set(CMAKE_LINKER "${_lld_link}")
     set(QT_HOST_PATH          "/opt/homebrew/opt/qt"            CACHE PATH "")
     set(QT_HOST_PATH_CMAKE_DIR "/opt/homebrew/opt/qt/lib/cmake" CACHE PATH "")
 else()
-    # Linux CI — LLVM 19 from apt (clang-19 lld-19 llvm-19)
-    set(_llvm_bin "/usr/lib/llvm-19/bin")
+    # Newest installed LLVM at or above the floor. Distro packages top out below
+    # it, so this normally comes from apt.llvm.org — see doc/WINDOWS.md.
+    if(DEFINED ENV{PHOTO_SALON_LLVM_BIN})
+        set(_llvm_bin "$ENV{PHOTO_SALON_LLVM_BIN}")
+    else()
+        file(GLOB _llvm_dirs "/usr/lib/llvm-*")
+        set(_llvm_bin "")
+        set(_best 0)
+        foreach(_d ${_llvm_dirs})
+            string(REGEX MATCH "llvm-([0-9]+)$" _m "${_d}")
+            if(_m AND CMAKE_MATCH_1 GREATER_EQUAL _photo_salon_min_llvm
+                  AND CMAKE_MATCH_1 GREATER _best
+                  AND EXISTS "${_d}/bin/lld-link")
+                set(_best ${CMAKE_MATCH_1})
+                set(_llvm_bin "${_d}/bin")
+            endif()
+        endforeach()
+        if(NOT _llvm_bin)
+            message(FATAL_ERROR
+                "No LLVM >= ${_photo_salon_min_llvm} found under /usr/lib/llvm-*.\n"
+                "The vendored MSVC STL headers require Clang ${_photo_salon_min_llvm} or newer "
+                "(error STL1000 otherwise).\n"
+                "  curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash -s ${_photo_salon_min_llvm}\n"
+                "  sudo apt-get install -y lld-${_photo_salon_min_llvm} llvm-${_photo_salon_min_llvm}\n"
+                "Or set PHOTO_SALON_LLVM_BIN to a suitable bin directory.")
+        endif()
+    endif()
     set(CMAKE_LINKER "${_llvm_bin}/lld-link")
     set(QT_HOST_PATH          "/opt/qt-linux/6.11.1/gcc_64"            CACHE PATH "")
     set(QT_HOST_PATH_CMAKE_DIR "/opt/qt-linux/6.11.1/gcc_64/lib/cmake" CACHE PATH "")
