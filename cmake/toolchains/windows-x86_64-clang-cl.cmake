@@ -60,7 +60,12 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "")
 set(_win_sdk_um   "${_project_root}/windows/sdk/lib/um")
 set(_win_sdk_ucrt "${_project_root}/windows/sdk/lib/ucrt")
 set(_msvc_lib     "${_project_root}/windows/msvc/lib")
-set(CMAKE_EXE_LINKER_FLAGS_INIT "/MACHINE:X64 /SUBSYSTEM:WINDOWS /MANIFEST:NO /LIBPATH:${_win_sdk_um} /LIBPATH:${_win_sdk_ucrt} /LIBPATH:${_msvc_lib}")
+#
+# /SUBSYSTEM is deliberately NOT forced here. CMake derives it per target from
+# WIN32_EXECUTABLE, which CMakeLists.txt sets on photo-salon and leaves off the
+# tests. Forcing /SUBSYSTEM:WINDOWS globally also made every test binary a GUI
+# app with no console, so their output went nowhere and they could not be run.
+set(CMAKE_EXE_LINKER_FLAGS_INIT "/MACHINE:X64 /MANIFEST:NO /LIBPATH:${_win_sdk_um} /LIBPATH:${_win_sdk_ucrt} /LIBPATH:${_msvc_lib}")
 
 # Programs (moc, rcc) are host-native — find them outside the sysroot
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
