@@ -75,10 +75,17 @@ function Write-Step {
 function Invoke-Vcvars {
     <#  Runs a command line inside the pinned toolset's vcvars64 environment.
 
-        Everything the bundle contains must be compiled by ONE toolset. Calling
-        vcvars64 with -vcvars_ver pins both the compiler and the STL headers on
-        INCLUDE; letting them drift apart is what produces "error STL1001:
+        Everything the bundle contains must be compiled by ONE toolset and
+        against ONE Windows SDK. -vcvars_ver pins the compiler and the STL
+        headers on INCLUDE; letting those drift apart produces "error STL1001:
         Unexpected compiler version".
+
+        The SDK version is pinned for the same reason, and it is not the
+        default: left to itself vcvars picks the NEWEST SDK installed, which on
+        a box with a preview SDK alongside the release one means Qt and the
+        codecs compile against headers whose import libraries are not the ones
+        this bundle vendors. Anything they then reference that only exists in
+        the newer SDK goes missing at cross-link.
 
         Output is written to -LogFile by cmd itself rather than through a
         PowerShell pipe, so a multi-hour build streams to disk and can be
@@ -94,7 +101,15 @@ function Invoke-Vcvars {
     $lines = @(
         '@echo off'
         "cd /d `"$WorkingDirectory`" || exit /b 1"
-        "call `"$($Config.VcvarsBat)`" -vcvars_ver=$($Config.VcvarsVer) >nul || exit /b 1"
+        # vcvars64.bat forwards to vcvarsall.bat: [winsdk_version] [-vcvars_ver=…]
+        "call `"$($Config.VcvarsBat)`" $($Config.WindowsSdk) -vcvars_ver=$($Config.VcvarsVer) >nul || exit /b 1"
+        # vcvars silently falls back to its own defaults if it cannot honour a
+        # requested version, so confirm rather than assume. WindowsSDKVersion
+        # carries a trailing backslash.
+        "if `"%WindowsSDKVersion%`"==`"$($Config.WindowsSdk)\`" goto sdkok"
+        "echo ERROR: vcvars selected Windows SDK %WindowsSDKVersion%, expected $($Config.WindowsSdk)"
+        'exit /b 1'
+        ':sdkok'
         # Qt's CMake and Ninja, ahead of anything else that might be on PATH.
         "set `"PATH=$(Split-Path -Parent $Config.CMake);$(Split-Path -Parent $Config.Ninja);%PATH%`""
         $Command

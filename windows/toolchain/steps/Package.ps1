@@ -42,6 +42,14 @@ $codecCommits = if (Test-Path $codecCommitsFile) { Get-Content $codecCommitsFile
 $qtSrcFile = Join-Path $cfg.Out 'qt-sources.sha256'
 $qtSources = if (Test-Path $qtSrcFile) { Get-Content $qtSrcFile } else { @('(not built this run)') }
 
+# cl.exe with no arguments prints its banner and exits non-zero, so it needs
+# Invoke-Native rather than a bare call under $ErrorActionPreference = 'Stop'.
+$clVersion = (Invoke-Native -AllowFailure -Script { & (Join-Path $cfg.MsvcDir 'bin\Hostx64\x64\cl.exe') } |
+              Select-String -Pattern 'Version ([\d.]+)' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value } |
+              Select-Object -First 1)
+if (-not $clVersion) { $clVersion = '(unknown)' }
+
 $crtNote = if ($cfg.CrtLinkage -eq 'MultiThreaded') {
     'MultiThreaded (/MT) -- the CRT is linked into the .exe. No Visual C++
 Redistributable is needed on the target machine, and nothing ships beside the
@@ -67,10 +75,10 @@ mixing toolsets produces.
 
 Toolchain
 ---------
-MSVC toolset   $($cfg.MsvcToolset)  (cl $(& (Join-Path $cfg.MsvcDir 'bin\Hostx64\x64\cl.exe') 2>&1 | Select-String -Pattern 'Version ([\d.]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value }))
+MSVC toolset   $($cfg.MsvcToolset)  (cl $clVersion)
 Windows SDK    $($cfg.WindowsSdk)
-CMake          $(& $cfg.CMake --version | Select-Object -First 1)
-Ninja          $(& $cfg.Ninja --version)
+CMake          $(Invoke-Native -Script { & $cfg.CMake --version } | Select-Object -First 1)
+Ninja          $(Invoke-Native -Script { & $cfg.Ninja --version } | Select-Object -First 1)
 
 CRT linkage
 -----------
