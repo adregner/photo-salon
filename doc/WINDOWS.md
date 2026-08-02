@@ -14,14 +14,41 @@ are pre-built, published to S3, and pinned by `windows-deps.lock`.
 ## macOS / Linux prerequisites
 
 ```bash
-brew install llvm lld@21                      # macOS
-sudo apt install cmake clang-19 lld-19 llvm-19  # Debian/Ubuntu
+brew install llvm lld                                   # macOS
+
+sudo apt install cmake                                  # Debian/Ubuntu
+curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash -s 20
+sudo apt-get install -y lld-20 llvm-20
 ```
 
 `llvm` provides `clang-cl` (compiler) and `llvm-lib` (archiver); `lld` provides
 `lld-link` (PE/COFF linker). The build also needs a host Qt for `moc` and `rcc` —
 Homebrew's `qt` on macOS, `/opt/qt-linux/6.11.1/gcc_64` on Linux (the release workflow
 installs it with `aqtinstall`).
+
+### Clang 20 or newer is required
+
+The vendored MSVC STL headers carry a hard `static_assert` on the compiler version:
+
+```
+error STL1000: Unexpected compiler version, expected Clang 20 or newer.
+```
+
+**The required version tracks `MsvcToolset`**: toolset 14.51's headers want Clang 20.
+Bumping the toolset can raise the floor, so `_photo_salon_min_llvm` in the toolchain
+file, `_min_llvm` in `cmake/clang-cl-win.sh`, and the CI install steps move together
+with `versions.psd1`. Debian and Ubuntu package nothing new enough, hence
+`apt.llvm.org`.
+
+Both the toolchain file and the wrapper pick the **newest installed LLVM at or above
+that floor**, so a host with several versions does the right thing; set
+`PHOTO_SALON_LLVM_BIN` to override. Neither guesses: a host with nothing suitable gets
+the install command rather than a wall of template errors.
+
+Microsoft does provide `_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH` to suppress the
+assert, and it does produce a working binary — but it disables a deliberate guard, and
+the gap only widens with each toolset bump. Upgrading the compiler is the supported
+configuration.
 
 ## Build
 
@@ -179,21 +206,56 @@ The two linkages must not be mixed in one binary. `CrtLinkage` in `versions.psd1
 `CMAKE_MSVC_RUNTIME_LIBRARY` in the toolchain file have to agree; changing one means
 regenerating the bundles.
 
-Qt is also configured `-no-icu`. Left alone, configure finds the SDK's `icuuc`/`icuin`
-import libraries and the `.exe` ends up importing `icuuc.dll` and `icuin.dll`, which are
-only OS components on new enough Windows 10 builds. Without ICU, `QCollator` falls back
-to `CompareStringEx` and Windows' own collation — which is what a file-name sort wants
-anyway.
+Qt is configured `-no-icu`, which disables `QT_FEATURE_icu` and drops the `icuin.dll`
+import. It does **not** remove ICU entirely: Qt 6.11 has a separate
+`QT_FEATURE_winsdkicu`, on by default, and `qstringconverter.cpp` calls the Windows
+SDK's ICU converters (`ucnv_*`) through it — so the binary still imports `icuuc.dll`.
+That is a Windows component, not something we ship, so it does not affect the
+standalone goal. Turning it off as well (`-DFEATURE_winsdkicu=OFF`) would cost the
+non-UTF text codecs `QStringConverter` provides, which EXIF text can need.
 
 ### Verifying
 
+`build-windows.sh` runs this itself and fails the build on a regression, because a `/MD`
+slip links perfectly cleanly and only breaks on a machine without the redistributable
+installed. To check by hand:
+
 ```bash
-./build-windows.sh
-llvm-readobj-19 --coff-imports _build_win/photo-salon.exe | grep 'Name:' | sort -u
+llvm-readobj-20 --coff-imports _build_win/photo-salon.exe | grep 'Name:' | sort -u
 ```
 
-The list must contain no `MSVCP140*.dll` and no `VCRUNTIME140*.dll`. Everything left
-should be a Windows system DLL or an `api-ms-win-*` forwarder.
+The list must contain no `MSVCP140*.dll` and no `VCRUNTIME140*.dll`. As built there are
+also no `api-ms-win-crt-*` forwarders — the UCRT is linked in too — leaving 38 DLLs, all
+of them Windows components.
+
+### Native Windows test results
+
+The suite has never run on Windows in CI (the cross-compile job only checks that the
+`.exe` was produced), and running it by hand turns up a **pre-existing** problem: some
+test binaries die with an access violation (`0xC0000005`) before writing any output.
+This is not caused by the static CRT — these bundles roughly halve it:
+
+| | pass | crash |
+|---|---|---|
+| old bundles (`/MD`, MSVC 14.44 + 14.51 mix, clang-19) | 7 | 14 |
+| these bundles (`/MT`, one toolset, clang-20) | 12 | 9 |
+
+Results are stable across repeated runs of the same binaries, but the *set* that crashes
+moves when the build changes — matching the layout-sensitive libheif static-init access
+violation recorded in earlier revisions of this document. It is not a codec fault:
+`test_extra_formats` passes **16/16**, decoding HEIC, `.jpf`, `.j2k` and grayscale
+`.jp2`, reading EXIF out of a HEIC, and displaying one in the viewer. `photo-salon.exe`
+opens all of those formats correctly too.
+
+Three things make this awkward to reproduce, and are worth fixing separately:
+
+- Qt's `qoffscreen` platform plugin is not linked into the test binaries, so
+  `QT_QPA_PLATFORM=offscreen` has no effect and tests open real windows.
+- Qt Test's stdout does not survive capture from a non-interactive session; `-o
+  <file>,txt` is the only reliable way to collect results.
+- The tests resolve their data through a path baked in at build time, which on Windows
+  lands under `C:\<the Linux build path>`. Copy `tests/resources/` there, or the
+  image-reading cases fail with "File not found" rather than telling you why.
 
 ## What each bundle contains
 

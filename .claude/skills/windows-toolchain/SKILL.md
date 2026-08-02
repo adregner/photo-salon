@@ -59,6 +59,14 @@ versions, CRT linkage, which CRT libraries get vendored. **Bump `BundleTag` when
 any of those change** — published artifacts are immutable and the publish step refuses
 to overwrite an existing tag.
 
+**Changing `MsvcToolset` can break every build host.** The MSVC STL hard-asserts on the
+cross-compiler version (`error STL1000: Unexpected compiler version, expected Clang N or
+newer`) — 14.51 requires Clang 20. If a new toolset raises that floor, the minimum has to
+move in all four places together: `_min_llvm` in `cmake/clang-cl-win.sh`,
+`_photo_salon_min_llvm` in `cmake/toolchains/windows-x86_64-clang-cl.cmake`, and the
+LLVM install step in both CI workflows. Check the new headers' requirement before
+committing to a toolset bump.
+
 ## Publishing
 
 `-Step publish` uploads to S3 and is outward-facing. **Ask the user before running
@@ -88,7 +96,9 @@ system DLL or an `api-ms-win-*` forwarder.
 
 | Symptom | Cause |
 |---|---|
+| `error STL1000: Unexpected compiler version` | Cross-compiler older than the vendored MSVC STL headers require. Install a newer LLVM; see § Before you change anything. Do not reach for `_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH`. |
 | `lld-link: could not open '<name>.lib'` | Import lib genuinely absent from the SDK, or a casing the alias step missed — check `fetch-windows-deps.sh`'s `add_case_aliases`. The bundle ships all of `um/x64`, so a truly missing lib is unusual. |
+| `CMAKE_MSVC_RUNTIME_LIBRARY` ignored by a codec | That project declares an old `cmake_minimum_required`, so policy CMP0091 defaults to OLD and the CRT flag comes from `CMAKE_<LANG>_FLAGS_RELEASE` instead. The configure passes `-DCMAKE_POLICY_DEFAULT_CMP0091=NEW` for exactly this. |
 | undefined `__std_*` at cross-link | A component was built with a newer toolset than the vendored CRT. Rebuild everything from one toolset rather than adding `-D_USE_STD_VECTOR_ALGORITHMS=0`. |
 | `error STL1001: Unexpected compiler version` | A Qt module built under a different `vcvars_ver` than qtbase. `Invoke-Vcvars` pins it; suspect a manual build outside the scripts. |
 | unresolved `__imp_heif_*` / `__imp_opj_*` / `__imp_de265_*` | Static-build defines missing. `LIBHEIF_STATIC_BUILD` and `OPJ_STATIC` are set by `CMakeLists.txt` under `if(WIN32)`; `LIBDE265_STATIC_BUILD` is set when compiling libheif. |
