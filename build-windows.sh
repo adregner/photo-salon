@@ -22,15 +22,29 @@ cmake --build _build_win
 # obvious at build time — it links fine and only fails on a machine without the
 # redistributable installed — so check the import table before shipping.
 verify_standalone() {
-    local exe="$1" readobj="" candidate bad
-    for candidate in llvm-readobj llvm-readobj-19 \
-                     /opt/homebrew/opt/llvm/bin/llvm-readobj \
-                     /usr/lib/llvm-19/bin/llvm-readobj; do
-        if command -v "$candidate" >/dev/null 2>&1; then readobj="$candidate"; break; fi
+    local exe="$1" readobj="" candidate bad d
+    # Look beside the compiler first — that is the LLVM this build actually
+    # used. The versioned fallbacks are ordered newest-first.
+    #
+    # This list was pinned to llvm-readobj-19 and silently skipped the whole
+    # check on a runner that only had LLVM 20, reporting nothing at all. A
+    # guard that goes quiet when it cannot run is worse than no guard, so a
+    # missing tool is now an error rather than a shrug.
+    for d in ${PHOTO_SALON_LLVM_BIN:-} $(ls -d /usr/lib/llvm-* 2>/dev/null | sort -t- -k2 -n -r) \
+             /opt/homebrew/opt/llvm; do
+        if [ -x "$d/bin/llvm-readobj" ]; then readobj="$d/bin/llvm-readobj"; break; fi
+        if [ -x "$d/llvm-readobj" ]; then readobj="$d/llvm-readobj"; break; fi
     done
     if [ -z "$readobj" ]; then
-        echo "note: llvm-readobj not found — skipping the standalone import check"
-        return 0
+        for candidate in llvm-readobj llvm-readobj-22 llvm-readobj-21 llvm-readobj-20; do
+            if command -v "$candidate" >/dev/null 2>&1; then readobj="$candidate"; break; fi
+        done
+    fi
+    if [ -z "$readobj" ]; then
+        echo "error: llvm-readobj not found — cannot verify $exe is standalone." >&2
+        echo "       It ships with the LLVM that provides clang-cl. Set PHOTO_SALON_LLVM_BIN," >&2
+        echo "       or set PHOTO_SALON_SKIP_STANDALONE_CHECK=1 to build without the check." >&2
+        return 1
     fi
 
     bad="$("$readobj" --coff-imports "$exe" \
@@ -43,10 +57,14 @@ verify_standalone() {
         echo "       toolchain file and CrtLinkage in windows/toolchain/versions.psd1." >&2
         return 1
     fi
-    echo "Standalone check: no Visual C++ Redistributable imports."
+    echo "Standalone check: no Visual C++ Redistributable imports (via $readobj)."
 }
 
-verify_standalone "_build_win/photo-salon.exe"
+if [[ -n "${PHOTO_SALON_SKIP_STANDALONE_CHECK:-}" ]]; then
+    echo "Standalone check: skipped by PHOTO_SALON_SKIP_STANDALONE_CHECK"
+else
+    verify_standalone "_build_win/photo-salon.exe"
+fi
 
 # Optional Authenticode signing.
 #
