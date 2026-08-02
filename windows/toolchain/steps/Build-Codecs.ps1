@@ -169,33 +169,53 @@ foreach ($lib in Get-ChildItem (Join-Path $dest 'x64\lib') -Filter *.lib) {
     Write-Host "  $($lib.Name): $($directives -join ' ')"
 }
 
-# 2. Vectorised STL helpers (__std_rotate and friends) live in the CRT. Under
-#    /MD they must be exported by the vendored msvcprt.lib import library, and a
-#    CRT older than the compiler will not have the newest ones -- the failure
-#    earlier revisions papered over with -D_USE_STD_VECTOR_ALGORITHMS=0. Under
-#    /MT they are compiled into libcpmt.lib, so a same-toolset build cannot miss
-#    them. Either way, prove it here instead of discovering it at cross-link.
-$crtLib = if ($cfg.CrtLinkage -eq 'MultiThreaded') {
-    Join-Path $cfg.MsvcDir 'lib\x64\libcpmt.lib'
+# 2. The compiler emits calls to __std_* CRT helpers -- vectorised algorithms
+#    (__std_rotate), exception plumbing (__std_exception_copy), RTTI
+#    (__std_type_info_name). A CRT older than the compiler that produced the
+#    objects will not have the newest of them; that is the failure earlier
+#    revisions papered over with -D_USE_STD_VECTOR_ALGORITHMS=0. Prove the whole
+#    set resolves here rather than discovering it at cross-link.
+#
+#    They are spread across several libraries -- the C++ ones in libcpmt, the
+#    exception and RTTI ones in libvcruntime -- so the search has to cover every
+#    CRT library that ships for this linkage, and only that linkage's set: a
+#    symbol found only in the /MD libraries would not save a /MT link.
+$crtLibPaths = @()
+if ($cfg.CrtLinkage -eq 'MultiThreaded') {
+    foreach ($n in @('libcmt.lib', 'libcpmt.lib', 'libvcruntime.lib', 'libconcrt.lib', 'libvcmath-mt.lib')) {
+        $crtLibPaths += Join-Path $cfg.MsvcDir "lib\x64\$n"
+    }
+    $crtLibPaths += Join-Path $cfg.SdkRoot "Lib\$($cfg.WindowsSdk)\ucrt\x64\libucrt.lib"
 } else {
-    Join-Path $cfg.MsvcDir 'lib\x64\msvcprt.lib'
+    foreach ($n in @('msvcrt.lib', 'msvcprt.lib', 'vcruntime.lib', 'concrt.lib', 'libvcmath-md.lib')) {
+        $crtLibPaths += Join-Path $cfg.MsvcDir "lib\x64\$n"
+    }
+    $crtLibPaths += Join-Path $cfg.SdkRoot "Lib\$($cfg.WindowsSdk)\ucrt\x64\ucrt.lib"
 }
-$heifLib = Join-Path $dest 'x64\lib\heif.lib'
-$available = Invoke-Native -What 'dumpbin /linkermember' -Script { & $dumpbin /linkermember:1 $crtLib } |
-             Select-String -Pattern '\b(__std_\w+)' -AllMatches |
-             ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value } |
-             Sort-Object -Unique
-$needed = Invoke-Native -What 'dumpbin /symbols' -Script { & $dumpbin /symbols $heifLib } |
-          Select-String -Pattern 'UNDEF.*\b(__std_\w+)' -AllMatches |
-          ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value } |
-          Sort-Object -Unique
-$unresolved = $needed | Where-Object { $available -notcontains $_ }
-if ($unresolved) {
-    throw ("heif.lib references STL helpers absent from $(Split-Path -Leaf $crtLib): " +
-           "$($unresolved -join ', '). The cross-link would fail with undefined symbols. " +
-           "Build the codecs with the same toolset the CRT was taken from.")
+
+$available = @()
+foreach ($crtLib in $crtLibPaths) {
+    if (-not (Test-Path $crtLib)) { continue }
+    $available += Invoke-Native -What 'dumpbin /linkermember' -Script { & $dumpbin /linkermember:1 $crtLib } |
+                  Select-String -Pattern '\b(__std_\w+)' -AllMatches |
+                  ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value }
 }
-Write-Host "  __std_* referenced: $(if ($needed) { $needed -join ' ' } else { '(none)' }) -- all present in $(Split-Path -Leaf $crtLib)"
+$available = $available | Sort-Object -Unique
+
+foreach ($lib in Get-ChildItem (Join-Path $dest 'x64\lib') -Filter *.lib) {
+    $needed = Invoke-Native -What 'dumpbin /symbols' -Script { & $dumpbin /symbols $lib.FullName } |
+              Select-String -Pattern 'UNDEF.*\b(__std_\w+)' -AllMatches |
+              ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value } |
+              Sort-Object -Unique
+    $unresolved = $needed | Where-Object { $available -notcontains $_ }
+    if ($unresolved) {
+        throw ("$($lib.Name) references CRT helpers absent from the $($cfg.CrtLinkage) " +
+               "libraries this bundle ships: $($unresolved -join ', '). The cross-link would " +
+               "fail with undefined symbols. Build the codecs with the same toolset the CRT " +
+               "was taken from.")
+    }
+    Write-Host "  $($lib.Name) __std_*: $(if ($needed) { $needed -join ' ' } else { '(none)' })"
+}
 
 # ── Record what was built ────────────────────────────────────────────────────
 $commits.GetEnumerator() | ForEach-Object { "$($_.Key) $($_.Value)" } |
