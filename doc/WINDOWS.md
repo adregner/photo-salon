@@ -242,7 +242,20 @@ This is not caused by the static CRT — these bundles roughly halve it:
 
 Results are stable across repeated runs of the same binaries, but the *set* that crashes
 moves when the build changes — matching the layout-sensitive libheif static-init access
-violation recorded in earlier revisions of this document. It is not a codec fault:
+violation recorded in earlier revisions of this document.
+
+`photo-salon.exe` itself shows the same access violation intermittently, and measuring
+it is a trap in two ways. The crash lands several seconds after the image loads, so a
+short observation window reports a clean run that was not; and the failures arrive in
+**clusters correlated with machine state** rather than with the binary — on a headless
+VM, a burst follows heavy process churn (killing a batch of windowed tests) and then
+subsides for long stretches. Comparing two builds in separate runs therefore measures
+the machine, not the binaries: one such comparison put the CI build at 8/10 crashes and
+a local build at 0/10, and an **interleaved** A/B of the same two binaries plus the
+previously shipped v0.5.0 release put all three at 0/8. Only interleave, and observe for
+at least 15 seconds.
+
+It is not a codec fault:
 `test_extra_formats` passes **16/16**, decoding HEIC, `.jpf`, `.j2k` and grayscale
 `.jp2`, reading EXIF out of a HEIC, and displaying one in the viewer. `photo-salon.exe`
 opens all of those formats correctly too.
