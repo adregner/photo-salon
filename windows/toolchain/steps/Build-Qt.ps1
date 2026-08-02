@@ -56,10 +56,11 @@ $qtbaseBuild = Join-Path $cfg.Build 'qtbase'
 if (-not (Test-Path $qtbaseBuild)) { New-Item -ItemType Directory -Path $qtbaseBuild -Force | Out-Null }
 
 if (-not (Test-Path (Join-Path $qtbaseBuild 'CMakeCache.txt'))) {
-    $args = ($cfg.QtConfigureArgs -join ' ')
-    Write-Step "Configuring qtbase ($args)"
+    # Not $args — that is an automatic variable.
+    $configureArgs = ($cfg.QtConfigureArgs -join ' ')
+    Write-Step "Configuring qtbase ($configureArgs)"
     Invoke-VcvarsChecked -Config $cfg -WorkingDirectory $qtbaseBuild `
-        -Command "`"$qtbaseSrc\configure.bat`" -prefix `"$prefix`" $args" `
+        -Command "`"$qtbaseSrc\configure.bat`" -prefix `"$prefix`" $configureArgs" `
         -LogFile (Join-Path $cfg.Logs 'qtbase-configure.log') -What 'qtbase configure'
 }
 

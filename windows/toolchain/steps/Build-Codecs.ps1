@@ -33,6 +33,13 @@ $common = @(
     '-DCMAKE_BUILD_TYPE=Release'
     '-DBUILD_SHARED_LIBS=OFF'
     "-DCMAKE_MSVC_RUNTIME_LIBRARY=$($cfg.CrtLinkage)"
+    # CMAKE_MSVC_RUNTIME_LIBRARY only takes effect under policy CMP0091 NEW, and
+    # a project that declares an old cmake_minimum_required gets CMP0091 OLD --
+    # where the CRT flag comes from CMAKE_<LANG>_FLAGS_RELEASE and defaults to
+    # /MD. libde265 does exactly that, and came out linked against msvcprt/MSVCRT
+    # while libheif next to it was correctly LIBCMT. Forcing the policy is what
+    # makes the setting above mean anything for these older projects.
+    '-DCMAKE_POLICY_DEFAULT_CMP0091=NEW'
     "-DCMAKE_INSTALL_PREFIX=`"$prefix`""
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"   # these projects predate CMake 4's floor
 ) -join ' '
@@ -97,10 +104,26 @@ foreach ($codec in $cfg.Codecs) {
 # libheif's configure summary is the only reliable statement that HEVC decoding
 # actually got compiled in. A missing back-end otherwise shows up as a runtime
 # "no decoder" error long after this script has claimed success.
+#
+# The wording has changed between libheif releases -- 1.23 prints a summary
+# table row ("libde265 HEVC decoder : + built-in"), older versions printed
+# "Compiling 'libde265' as built-in backend". Accept either, and fail on
+# neither, rather than silently skipping the check when upstream rewords it.
 $heifLog = Get-Content (Join-Path $cfg.Logs 'libheif-configure.log') -Raw
-if ($heifLog -notmatch "(?i)Compiling 'libde265' as built-in backend") {
+$builtIn = ($heifLog -match "(?im)^\s*libde265[^\r\n]*:\s*\+\s*built-in") -or
+           ($heifLog -match "(?i)Compiling 'libde265' as built-in backend")
+if (-not $builtIn) {
     Write-Host $heifLog
-    throw "libheif did not compile libde265 in as a built-in backend -- HEIC would not decode."
+    throw ("libheif did not compile libde265 in as a built-in backend -- HEIC would not " +
+           "decode. If libheif reworded its configure summary again, update this check.")
+}
+# The summary's HEIC row is "HEIC <decode> <encode>"; decoding is what matters.
+if ($heifLog -match "(?im)^\s*HEIC\s+(\S+)") {
+    if ($Matches[1] -notmatch '(?i)yes') {
+        Write-Host $heifLog
+        throw "libheif reports HEIC decoding as '$($Matches[1])', expected YES."
+    }
+    Write-Host "  libheif: libde265 built-in, HEIC decoding YES"
 }
 
 # ── Assemble the bundle tree ─────────────────────────────────────────────────

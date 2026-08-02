@@ -117,6 +117,13 @@ function Invoke-Vcvars {
     )
     Set-Content -Path $bat -Value $lines -Encoding ascii
 
+    # Start-Process's redirection overwrites in place rather than truncating, so
+    # a shorter run leaves the tail of a previous one behind -- which reads as a
+    # build that finished when it is still going. Clear them first.
+    foreach ($stale in @($LogFile, "$LogFile.err")) {
+        if (Test-Path $stale) { Remove-Item $stale -Force }
+    }
+
     try {
         $p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', "`"$bat`"" `
                  -NoNewWindow -Wait -PassThru `
