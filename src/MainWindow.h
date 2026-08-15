@@ -56,6 +56,19 @@ public:
     // comparison flow can be driven in tests.
     void openComparison(const QString &path);
 
+    // Single entry point for opening one image path as "the" image (replacing
+    // whatever is currently shown, collapsing compare mode first). Used by every
+    // way of opening a file that isn't the deliberate two-image Shift+O compare
+    // (initial launch, File > Open, the Tab folder browser, and arrow-key
+    // navigation) so auto-pair detection (see below) always applies. Exposed for
+    // tests.
+    void openImage(const QString &path);
+
+    // True while the current compare-mode session is one that auto-pairing opened
+    // (both panes hold a detected "_pair" pair) rather than a manual Shift+O
+    // compare. Exposed for tests.
+    bool autoPaired() const { return m_autoPaired; }
+
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
@@ -99,6 +112,27 @@ private:
     void openFile();
     void updateExternalEditorName();
 
+    // --- Auto-pair ("_pair" file names) -----------------------------------
+    // Checks the single pane at m_panes[0] for a "_pair" partner and, if one
+    // exists, expands into an auto-paired compare (lexicographically-first path
+    // in the left pane). Precondition: m_panes holds exactly one pane.
+    void applyAutoPairIfNeeded(const QString &path);
+    // Puts a and b (in whichever order is lexicographically correct) into a
+    // two-pane compare: reloads the sole existing pane (m_panes[0]) to the left
+    // path if needed, then opens the right path beside it. Precondition: m_panes
+    // holds exactly one pane.
+    void arrangePair(const QString &a, const QString &b);
+    // Folder-relative next/prev file, mirroring ImageViewer::navigate() (used
+    // both for plain arrow-key navigation and for stepping past an auto-paired
+    // pair as a unit).
+    QString adjacentImagePath(const QString &path, int delta) const;
+    // Left/Right arrow-key handling for the focused pane. In an auto-paired
+    // compare, this steps past the whole pair and returns to single mode; in a
+    // manual compare it steps only the focused image in place (today's
+    // behavior); in single mode it steps to the next file, applying auto-pair
+    // detection to the result.
+    void navigateFocused(int delta);
+
     // Layout: a container holding the compare tab strip above a horizontal row of
     // pane viewers (one viewer in single mode, two side by side in compare mode).
     QWidget       *m_container      = nullptr;
@@ -108,6 +142,7 @@ private:
     QList<ImagePane *> m_panes;
     int  m_focus        = 0;
     bool m_syncingViews = false;   // re-entrancy guard for view synchronization
+    bool m_autoPaired   = false;   // compare mode was entered by "_pair" auto-detection
 
     HelpOverlay *m_helpOverlay = nullptr;
     ExifOverlay *m_exifOverlay = nullptr;

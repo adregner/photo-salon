@@ -182,3 +182,13 @@ While comparing, **zoom and pan are synchronized relative to each image's pixels
 on-screen size: panning to a point 25 % down and 70 % across one image centres the other on
 the same relative point, and a zoom level is relative to "fit", so the two stay matched even
 when the photos differ greatly in resolution.
+
+#### Auto-pairing "_pair" files
+
+If a folder holds exactly two images whose file names (before the extension) both end with
+`_pair` — e.g. `smith-001_pair.jpg` and `smith-002_pair.jpg` — opening either one, by any
+means (launching photo-salon on it, `File > Open`, the `Tab` folder browser, or arrow-key
+navigation), automatically opens both side by side, with the lexicographically first file in
+the left pane. The → / ← arrow keys step past the pair as a single unit, back to single-image
+mode, rather than stepping into it. To view just one of the pair alone, let it auto-open both
+and close the other tab with its `✕`.
