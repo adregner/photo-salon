@@ -50,3 +50,32 @@ QString resolveImagePath(const QString &arg, QString *error) {
 
     return info.absoluteFilePath();
 }
+
+QString findPairPartner(const QString &path) {
+    QFileInfo info(path);
+    if (!info.completeBaseName().endsWith(QLatin1String("_pair")))
+        return {};
+
+    QDir dir = info.absoluteDir();
+    QStringList exts = supportedExtensions();
+    exts.removeAll(QStringLiteral("*.svg"));   // folder navigation excludes SVGs
+    const QStringList files = dir.entryList(exts, QDir::Files, QDir::Name);
+
+    QStringList pairFiles;
+    for (const QString &name : files) {
+        if (QFileInfo(name).completeBaseName().endsWith(QLatin1String("_pair")))
+            pairFiles << name;
+    }
+
+    // Only pair up when exactly two "_pair" images share the folder — with more,
+    // which one is this file's actual partner would be ambiguous.
+    if (pairFiles.size() != 2)
+        return {};
+
+    const QString fileName = info.fileName();
+    if (!pairFiles.contains(fileName))
+        return {};
+
+    const QString other = (pairFiles.first() == fileName) ? pairFiles.at(1) : pairFiles.first();
+    return dir.absoluteFilePath(other);
+}

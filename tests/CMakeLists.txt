@@ -144,3 +144,9 @@ target_link_libraries(test_compare PRIVATE Qt6::Test photo-salon-lib)
 add_test(NAME test_compare COMMAND test_compare)
 set_tests_properties(test_compare PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(test_photo_pair test_photo_pair.cpp)
+target_link_libraries(test_photo_pair PRIVATE Qt6::Test photo-salon-lib)
+add_test(NAME test_photo_pair COMMAND test_photo_pair)
+set_tests_properties(test_photo_pair PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

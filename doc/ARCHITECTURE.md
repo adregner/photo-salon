@@ -216,6 +216,31 @@ keeps a `QList<ImagePane*>` and a `m_focus` index, plus the *shared* overlays/pa
   `m_syncingViews`, and one-directional so the mirror target never echoes back). This makes
   zoom relative to "fit" and pan relative to pixels, so differently-sized images stay matched.
 
+### Auto-pairing "_pair" files
+
+`ImageFormats::findPairPartner(path)` returns the one other image in `path`'s folder whose
+base file name (before the extension) also ends with `_pair`, or an empty string if `path`
+isn't a "_pair" file, has no partner, or the folder has more than two "_pair" images
+(ambiguous — not auto-paired).
+
+`MainWindow::openImage(path)` is the single entry point every non-Shift+O way of opening a
+file routes through — the initial CLI path, `File > Open` (`openFile`), the `Tab` folder
+browser (`folderBrowseFocused`), and arrow-key navigation (`navigateFocused`) — specifically
+so this check runs no matter how a file is opened. (Shift+O's `openComparison()` is
+deliberately exempted — it is the one action that means "compare *these two specific*
+images.") When `findPairPartner()` matches, `arrangePair()` puts the lexicographically first
+path in `m_panes[0]` (reloading it if needed) and opens the other via `openComparison()`,
+setting `m_autoPaired = true`.
+
+While `m_autoPaired` is true, the app-wide key filter intercepts `Left`/`Right` before
+`ImageViewer`'s own self-contained `navigate()` runs (see `MainWindow::eventFilter`) and calls
+`navigateFocused()`, which steps from the pair's left or right edge to the adjacent file in
+the folder and reopens via `openImage()` — collapsing back to single-image mode rather than
+navigating one pane in place. A manual (non-auto-paired) compare's arrow keys still just step
+the focused pane's image, as before this feature existed. Closing a tab (`closePane()`) always
+resets `m_autoPaired` to false, so the survivor is treated as a plain single image — the only
+way to view one half of a pair alone.
+
 ## Crop & rotate overlay (in `ImageViewer`)
 
 `X` and `R` are two modes of one selection overlay

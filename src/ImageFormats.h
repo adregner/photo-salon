@@ -19,3 +19,10 @@ QString supportedSaveFilter();
 // If arg is a file, returns its absolute path.
 // Returns an empty string and sets *error on failure (non-null error pointer only).
 QString resolveImagePath(const QString &arg, QString *error = nullptr);
+
+// If path's base file name ends with "_pair" and exactly one other image in the
+// same folder also has a base name ending with "_pair", returns that other
+// image's absolute path (the auto-pair partner). Otherwise (not a "_pair" file,
+// no partner, or more than two "_pair" images in the folder — ambiguous) returns
+// an empty string.
+QString findPairPartner(const QString &path);
