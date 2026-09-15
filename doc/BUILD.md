@@ -51,9 +51,9 @@ without that format. Point the search at a specific build by passing e.g.
 `-DHEIF_INCLUDE_DIR=… -DHEIF_LIBRARY=…`.
 
 pkg-config is skipped while cross-compiling, so the Windows build never links the host's
-libraries. It gets MSVC builds of both codecs from the vendored `codecs.tar.gz` bundle
-that `fetch-windows-deps.sh` unpacks into `windows/codecs/x64/` — see `doc/WINDOWS.md`
-§ Image codec libraries for how that bundle is built and republished.
+libraries. It gets MSVC builds of both codecs from the codecs bundle that
+`fetch-windows-deps.sh` unpacks into `windows/codecs/x64/` — see `doc/WINDOWS.md`
+§ Image codecs for how that bundle is built and republished.
 
 On macOS `macdeployqt` copies both dylibs (and their transitive dependencies, such as
 `libde265`) into `photo-salon.app/Contents/Frameworks` during `./bundle-macos.sh`, so the
@@ -89,8 +89,8 @@ The macOS and Linux release paths also run `ctest`, where `test_extra_formats` p
 plugins actually register in the built binary — the configure gate guarantees they were
 compiled in, that suite guarantees `QImageReader` can see them.
 
-The Windows release job passes the same gate using the vendored `codecs.tar.gz` bundle
-(`doc/WINDOWS.md` § Image codec libraries). If that bundle ever goes missing or regresses,
+The Windows release job passes the same gate using the pre-built codecs bundle
+(`doc/WINDOWS.md` § Image codecs). If that bundle ever goes missing or regresses,
 the job fails rather than publishing an `.exe` without HEIC and JPEG 2000 — which is the
 intended behaviour.
 
@@ -145,30 +145,17 @@ cases skip themselves when the matching codec wasn't found at configure time.
 | Windows (cross from macOS/Linux) | `./build-windows.sh` | `_build_win/photo-salon.exe` (static, MSVC ABI). See `doc/WINDOWS.md`. |
 | Windows (native) | `cmake -B _build -DCMAKE_PREFIX_PATH=...msvc2022_64 && cmake --build _build --config Release` | `_build/Release/photo-salon.exe`. |
 
-### Windows SDK import libraries
+### Windows cross-compile dependencies
 
-`windows/sdk/lib/um/` holds the Windows SDK import libraries (e.g. `kernel32.lib`,
-`ws2_32.lib`, `crypt32.lib`) needed at link time. They are committed to the repo so the
-cross-build is self-contained — only the bulky SDK *headers* are fetched from S3. These
-are real SDK import libs with lowercased filenames; an import lib contains no code, only
-the symbol→DLL mapping the linker records in the PE import table.
+Nothing under `windows/msvc/`, `windows/sdk/`, `windows/qt-6.11/` or `windows/codecs/`
+is committed. `fetch-windows-deps.sh` downloads all four bundles named in
+`windows-deps.lock` and verifies each against the SHA-256 recorded there.
 
-When a new Qt module or C++ library is linked in and depends on an additional Windows
-system DLL, `build-windows.sh` fails with `lld-link: error: could not open '<name>.lib'`.
-Fix it by copying that import library from a Windows SDK into `windows/sdk/lib/um/`,
-lowercasing the filename to match the existing files:
-
-```bash
-SDK="/c/Program Files (x86)/Windows Kits/10/Lib/<version>/um/x64"   # on a Windows box
-cp "$SDK/<Name>.Lib" windows/sdk/lib/um/<name>.lib
-```
-
-On macOS/Linux without a Windows SDK, extract the lib with a tool like `xwin` or copy it
-from a Windows machine. Commit the new `.lib` alongside the others.
-
-> Earlier revisions generated a few of these as minimal symbol stubs via `llvm-dlltool`
-> (`mkstub` in `fetch-windows-deps.sh`). That was replaced with the full SDK import libs:
-> stubs covered only hand-listed symbols and broke whenever a new symbol was referenced.
+Adding a Qt module or a library that depends on a new Windows system DLL needs **no
+action**: the SDK bundle vendors every x64 import library the SDK ships, so there is no
+longer a "copy one more `.lib` into the repo when the link fails" step. Regenerating or
+republishing the bundles is `windows/toolchain/Make-WindowsToolchain.ps1` on a Windows
+machine — see `doc/WINDOWS.md`.
 
 **Code signing is opt-in** and driven by environment variables:
 - macOS: `CODESIGN_IDENTITY`, `NOTARIZE_APPLE_ID`, `NOTARIZE_PASSWORD`, `NOTARIZE_TEAM_ID`

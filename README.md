@@ -65,7 +65,7 @@ Replace `6.x.x` with the Qt version you installed (e.g. `6.8.0`).
 
 ### Windows (cross-compile from macOS)
 
-Cross-compiles a self-contained static `.exe` using `clang-cl` targeting the MSVC ABI. See [`doc/WINDOWS.md`](doc/WINDOWS.md) for prerequisites and setup.
+Cross-compiles a self-contained static `.exe` using `clang-cl` targeting the MSVC ABI. The C runtime is linked in statically, so the released binary runs on a stock Windows 10/11 machine with no Visual C++ Redistributable and nothing alongside it. See [`doc/WINDOWS.md`](doc/WINDOWS.md) for prerequisites and setup.
 
 ```bash
 ./build-windows.sh

@@ -33,7 +33,7 @@ cd _build && ctest --output-on-failure   # run the test suite (headless)
 - Optional codecs: `libheif` + `OpenJPEG` (`brew install libheif openjpeg`,
   `apt install libheif-dev libheif-plugin-libde265 libopenjp2-7-dev`). Missing ones only
   drop that format — CMake warns and carries on. The Windows cross-build gets MSVC builds
-  of both from the vendored `codecs.tar.gz` bundle; see `doc/WINDOWS.md`.
+  of both from the pre-built codecs bundle; see `doc/WINDOWS.md`.
 - **Release builds require them**: `PHOTO_SALON_REQUIRE_CODECS=1 ./build` (set by
   `bundle-macos.sh` and both release workflows) turns a missing codec into a fatal
   configure error, so no published binary lacks a format it advertises.
@@ -41,7 +41,10 @@ cd _build && ctest --output-on-failure   # run the test suite (headless)
 - Regenerate `compile_commands.json` when stale:
   `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .`
 - Packaging, dependencies, and the release workflow: **`doc/BUILD.md`**.
-- Windows cross-compile from macOS (`./build-windows.sh`): **`doc/WINDOWS.md`**.
+- Windows cross-compile from macOS/Linux (`./build-windows.sh`): **`doc/WINDOWS.md`**.
+  Produces a standalone `.exe` (static CRT, no VC++ Redistributable). Its pre-built
+  inputs are pinned in `windows-deps.lock` and regenerated on a Windows machine by
+  `windows/toolchain/Make-WindowsToolchain.ps1`.
 
 ## Conventions
 
@@ -54,9 +57,8 @@ cd _build && ctest --output-on-failure   # run the test suite (headless)
   Folder navigation excludes `*.svg`.
 - When adding a feature, check whether `README.md`, `CLAUDE.md`, `ROADMAP.md`, and the
   `HelpOverlay` shortcut list need updating.
-- When adding a Qt module or library that pulls in new Windows system DLLs, copy the
-  matching Windows SDK import lib into `windows/sdk/lib/um/`. See
-  **`doc/BUILD.md` § Windows SDK import libraries**.
+- Adding a Qt module or library that pulls in new Windows system DLLs needs no action:
+  the SDK bundle vendors every x64 import library the SDK ships.
 
 ## Architecture (summary)
 

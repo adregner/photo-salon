@@ -1,23 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Downloads and verifies the pinned bundles, and creates the linker's
+# case-variant library aliases. See doc/WINDOWS.md.
 "$(dirname "$0")/fetch-windows-deps.sh"
-
-for dir in windows/msvc/lib windows/sdk/lib/ucrt windows/sdk/lib/um; do
-  for f in "$dir"/*.lib; do
-    base=$(basename "$f")
-    upper="$(echo "${base%.lib}" | tr '[:lower:]' '[:upper:]').lib"
-    if [ "$base" != "$upper" ] && [ ! -e "$dir/$upper" ]; then
-      ln -s "$base" "$dir/$upper"
-      echo "Created: $dir/$upper -> $base"
-    fi
-  done
-done
 
 # Set PHOTO_SALON_REQUIRE_CODECS=1 (the release workflow does) to refuse to build
 # an .exe without the HEIC / JPEG 2000 plugins. The MSVC builds of libheif and
 # OpenJPEG they need come from the codecs bundle fetched above into
-# windows/codecs/x64 — see doc/WINDOWS.md § Image codec libraries.
+# windows/codecs/x64 — see doc/WINDOWS.md § Image codecs.
 REQUIRE_CODECS="OFF"
 [[ -n "${PHOTO_SALON_REQUIRE_CODECS:-}" && "${PHOTO_SALON_REQUIRE_CODECS}" != "0" ]] \
     && REQUIRE_CODECS="ON"
@@ -25,6 +16,55 @@ REQUIRE_CODECS="OFF"
 cmake -B _build_win --toolchain cmake/toolchains/windows-x86_64-clang-cl.cmake \
   -DCMAKE_BUILD_TYPE=Release -DPHOTO_SALON_REQUIRE_CODECS="$REQUIRE_CODECS"
 cmake --build _build_win
+
+# The .exe must be standalone: the CRT is linked statically (/MT), so it must not
+# import the Visual C++ Redistributable DLLs. Nothing about a /MD regression is
+# obvious at build time — it links fine and only fails on a machine without the
+# redistributable installed — so check the import table before shipping.
+verify_standalone() {
+    local exe="$1" readobj="" candidate bad d
+    # Look beside the compiler first — that is the LLVM this build actually
+    # used. The versioned fallbacks are ordered newest-first.
+    #
+    # This list was pinned to llvm-readobj-19 and silently skipped the whole
+    # check on a runner that only had LLVM 20, reporting nothing at all. A
+    # guard that goes quiet when it cannot run is worse than no guard, so a
+    # missing tool is now an error rather than a shrug.
+    for d in ${PHOTO_SALON_LLVM_BIN:-} $(ls -d /usr/lib/llvm-* 2>/dev/null | sort -t- -k2 -n -r) \
+             /opt/homebrew/opt/llvm; do
+        if [ -x "$d/bin/llvm-readobj" ]; then readobj="$d/bin/llvm-readobj"; break; fi
+        if [ -x "$d/llvm-readobj" ]; then readobj="$d/llvm-readobj"; break; fi
+    done
+    if [ -z "$readobj" ]; then
+        for candidate in llvm-readobj llvm-readobj-22 llvm-readobj-21 llvm-readobj-20; do
+            if command -v "$candidate" >/dev/null 2>&1; then readobj="$candidate"; break; fi
+        done
+    fi
+    if [ -z "$readobj" ]; then
+        echo "error: llvm-readobj not found — cannot verify $exe is standalone." >&2
+        echo "       It ships with the LLVM that provides clang-cl. Set PHOTO_SALON_LLVM_BIN," >&2
+        echo "       or set PHOTO_SALON_SKIP_STANDALONE_CHECK=1 to build without the check." >&2
+        return 1
+    fi
+
+    bad="$("$readobj" --coff-imports "$exe" \
+           | sed -n 's/^ *Name: //p' | sort -u \
+           | grep -Ei '^(msvcp[0-9]|msvcr[0-9]|vcruntime[0-9])' || true)"
+    if [ -n "$bad" ]; then
+        echo "error: $exe imports Visual C++ Redistributable DLLs:" >&2
+        printf '  %s\n' $bad >&2
+        echo "       Expected a static CRT. Check CMAKE_MSVC_RUNTIME_LIBRARY in the" >&2
+        echo "       toolchain file and CrtLinkage in windows/toolchain/versions.psd1." >&2
+        return 1
+    fi
+    echo "Standalone check: no Visual C++ Redistributable imports (via $readobj)."
+}
+
+if [[ -n "${PHOTO_SALON_SKIP_STANDALONE_CHECK:-}" ]]; then
+    echo "Standalone check: skipped by PHOTO_SALON_SKIP_STANDALONE_CHECK"
+else
+    verify_standalone "_build_win/photo-salon.exe"
+fi
 
 # Optional Authenticode signing.
 #
