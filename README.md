@@ -125,6 +125,9 @@ Opens the specified image in a resizable window, scaled to fit. JPEG, PNG, TIFF,
 and the other formats Qt reads are supported, plus **HEIC/HEIF** (iPhone photos) and the
 **JPEG 2000** family — `.jpf`, `.jpx`, `.jp2`, `.j2k`.
 
+Full-resolution camera files are fine, including 16-bit-per-channel TIFFs: a single image
+may decode to up to 2 GB, which covers a 150-megapixel frame at 16 bits per channel.
+
 Edits are **non-destructive and remembered per image**: rotation, flips, crop, light/level
 and colour adjustments, and the black-&-white look are tracked in an internal change manifest
 that is saved locally and re-applied automatically the next time you open the same file. The

@@ -2,6 +2,15 @@
 #include <QString>
 #include <QStringList>
 
+// Number of megabytes a single decoded image is allowed to occupy. See
+// raiseImageAllocationLimit().
+constexpr int kImageAllocationLimitMb = 2048;
+
+// Raises Qt's cap on the size of a decoded image. Call once at startup, before
+// anything reads an image. Without it, Qt refuses full-resolution files from
+// current cameras — see the comment on the definition.
+void raiseImageAllocationLimit();
+
 // Returns glob patterns for all image formats Qt6 supports, e.g. "*.png", "*.jpg".
 // Suitable for use as QDir::entryList() nameFilters.
 QStringList supportedExtensions();

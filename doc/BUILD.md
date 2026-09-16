@@ -43,6 +43,21 @@ On Debian/Ubuntu libheif's HEVC decoder is a *separate* package it `dlopen`s at 
 even works — but decoding fails; the handler logs libheif's reason. Homebrew's libheif
 links the decoder in, so macOS needs nothing extra.
 
+### TIFF on Linux needs libtiff5
+
+TIFF comes from Qt's own `qtiff` plugin rather than from anything here, and on Linux the
+Qt that `./build` fetches links it against **`libtiff.so.5`**. Current Debian and Ubuntu
+ship `libtiff.so.6`, so the plugin fails to load and Qt drops TIFF from
+`QImageReader::supportedImageFormats()` entirely — no warning, and because the app
+derives its file filters from that list, `.tif` files simply stop appearing in the open
+dialog and in folder navigation.
+
+Check with `ldd "$(qmake -query QT_INSTALL_PLUGINS)/imageformats/libqtiff.so" | grep tiff`;
+a `not found` there is this problem. Install the older runtime (`libtiff5` on Debian 11 /
+Ubuntu 20.04, `libtiff5-dev` where packaged) or build against a Qt whose plugin matches
+the system libtiff. The Windows bundle is unaffected: its Qt is static and compiles
+libtiff into `qtiff.lib`, so `.tif` works there with nothing installed.
+
 Both are optional. `photo_salon_find_codec()` in the root `CMakeLists.txt` looks for each
 with pkg-config, then with a plain header/library search; a miss prints a warning, skips
 that plugin, and leaves the corresponding `PHOTO_SALON_HAVE_HEIF` /

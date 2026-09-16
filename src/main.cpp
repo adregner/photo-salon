@@ -34,6 +34,7 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("aregner"));
     app.setApplicationName(QStringLiteral("photo-salon"));
+    raiseImageAllocationLimit();
 
     QString path;
 
