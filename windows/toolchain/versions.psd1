@@ -11,7 +11,11 @@
 # bundle stays reachable for rollback.
 
 @{
-    BundleTag = '2026.08-mt1'
+    # 2026.09-de265fix: same toolset and same Qt as 2026.08-mt1; the codecs are
+    # rebuilt with the libde265 scan.cc patch in steps\Build-Codecs.ps1, without
+    # which the .exe dies in static initialisation before main(). See
+    # doc/WINDOWS.md, "The init_scan_orders miscompile".
+    BundleTag = '2026.09-de265fix'
 
     # ── Host toolchain (must be installed on the Windows machine) ────────────
     # Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\MSVC'

@@ -244,21 +244,77 @@ Results are stable across repeated runs of the same binaries, but the *set* that
 moves when the build changes — matching the layout-sensitive libheif static-init access
 violation recorded in earlier revisions of this document.
 
-`photo-salon.exe` itself shows the same access violation intermittently, and measuring
-it is a trap in two ways. The crash lands several seconds after the image loads, so a
-short observation window reports a clean run that was not; and the failures arrive in
-**clusters correlated with machine state** rather than with the binary — on a headless
-VM, a burst follows heavy process churn (killing a batch of windowed tests) and then
-subsides for long stretches. Comparing two builds in separate runs therefore measures
-the machine, not the binaries: one such comparison put the CI build at 8/10 crashes and
-a local build at 0/10, and an **interleaved** A/B of the same two binaries plus the
-previously shipped v0.5.0 release put all three at 0/8. Only interleave, and observe for
-at least 15 seconds.
+`photo-salon.exe` itself showed the same access violation, and it turned out not to be
+mysterious at all — see § The `init_scan_orders` miscompile below, which has the root
+cause and the fix. The measurement advice still stands, because the crash depends on
+leftover stack and therefore tracks machine state rather than the binary: comparing two
+builds in separate runs measures the machine, not the binaries. One such comparison put
+the CI build at 8/10 crashes and a local build at 0/10, while an **interleaved** A/B of
+the same two binaries put both at 0/8. Only ever interleave, and observe for at least 30
+seconds — the runaway loop burns ~25 s of CPU before it faults, so a short window reports
+a clean run that was not.
 
-It is not a codec fault:
-`test_extra_formats` passes **16/16**, decoding HEIC, `.jpf`, `.j2k` and grayscale
-`.jp2`, reading EXIF out of a HEIC, and displaying one in the viewer. `photo-salon.exe`
-opens all of those formats correctly too.
+### The `init_scan_orders` miscompile
+
+**MSVC 14.51 miscompiles `init_scan_orders()` in libde265's `scan.cc` at `/O2`.** This
+is what made shipped builds fail to start, and it is fixed by a patch applied in
+`windows/toolchain/steps/Build-Codecs.ps1`.
+
+In the generated code the `y`-loop bound for the *first* iteration is loaded out of the
+caller's home space before anything writes it — in the v0.5.1 binary,
+`mov ecx,[rsp+78h]` at `init_scan_orders+0x405`, whose first write is 0x11 bytes later.
+Whatever the caller left there becomes the bound. When it is large, `y` runs past the
+block size and `fill_scan_pos()` is asked for a coordinate the scan tables can never
+produce; its unbounded `do { … } while (xC != x || yC != y)` search then walks
+`lastSubBlock` negative and reads off the front of the image.
+
+The stack ends up crashing the process **during C++ static initialisation**: libheif
+registers its decoder plugins from a static initialiser, which calls `de265_init()`.
+
+```
+init_scan_orders + 0x50c     ← access violation, reading 2 bytes below the image base
+de265_init       + 0x3d
+register_default_plugins
+_initterm                    ← static initialisers, i.e. before main()
+```
+
+So the process dies before `main()` and no window ever appears, which is why it presents
+as "does not launch" rather than as a crash while viewing a photo. It is also why the
+*format* being opened is irrelevant: opening a plain JPEG triggers it, because the static
+HEIF plugin initialises regardless.
+
+It reproduces on a stock Windows Server 2025 (10.0.26100) box at **6/6 for both v0.5.0
+and v0.5.1** — it is not a regression from the bundle rework, just a latent bug whose
+odds shift with every layout change.
+
+`fill_scan_pos()` and `init_scan_orders()` run exactly once, at startup, so the patch
+simply builds those two functions unoptimized (`#pragma optimize("", off)` immediately
+before `fill_scan_pos`, which is the last thing in the file apart from
+`init_scan_orders`). The per-coefficient `get_scan_order()` / `get_scan_position()`
+above it keep `/O2`.
+
+`/OPT:NOICF` is a red herring, and a good illustration of the trap above. A
+non-interleaved comparison made it look like a fix — 4/4 crashes with ICF against 0/4
+without it — but an **interleaved** re-run of the same two binaries put both at 0/8,
+because by then the box was busy with another build and the leftover stack had changed.
+Any flag that perturbs layout or stack contents will appear to fix this and will
+silently stop working. Do not "fix" it that way.
+
+Sampling crash rates is the wrong instrument here in any case. The fix is checked
+statically instead: in `init_scan_orders`, every stack slot must be **written before it
+is read**. Disassemble the built object and look at the first access to each slot —
+
+```bash
+llvm-objdump -d windows/codecs/x64/lib/libde265.lib   # find ?init_scan_orders@@YAXXZ
+```
+
+In the shipped v0.5.1 library `0x78(%rsp)` is the one slot whose first access is a read.
+With the patch applied, all fifteen slots are written first, and none of them live in
+the caller's home space.
+
+The codecs are otherwise sound: `test_extra_formats` passes **16/16**, decoding HEIC,
+`.jpf`, `.j2k` and grayscale `.jp2`, reading EXIF out of a HEIC, and displaying one in
+the viewer.
 
 Three things make this awkward to reproduce, and are worth fixing separately:
 

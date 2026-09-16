@@ -127,6 +127,35 @@ jobs:
           name: photo-salon-unsigned
           path: to-sign
 
+      # This job is the only Windows in the pipeline, and until now it only
+      # signed the .exe -- nothing ever started it. That is how v0.5.0 and v0.5.1
+      # both shipped a binary that dies in static initialisation before main(),
+      # so no window ever appears (doc/WINDOWS.md, "The init_scan_orders
+      # miscompile"). The cross-build cannot catch that: it links cleanly.
+      #
+      # That crash burned ~25 s of CPU in a runaway loop before faulting, so the
+      # window has to be comfortably longer than the failure it is watching for.
+      # No arguments are needed -- the fault was before main(), and an idle
+      # window is a valid state for this app.
+      - name: Smoke test — the exe must start and stay running
+        shell: pwsh
+        run: |
+          $exe = 'to-sign\photo-salon.exe'
+          $seconds = 45
+          $p = Start-Process -FilePath $exe -PassThru
+          for ($t = 1; $t -le $seconds; $t++) {
+            Start-Sleep -Seconds 1
+            if ($p.HasExited) {
+              $code = $p.ExitCode
+              throw ("photo-salon.exe exited after ~${t}s with code $code " +
+                     ("(0x{0:X8})" -f ([int64]$code -band 0xFFFFFFFF)) +
+                     ". A released binary has to keep running; 0xC0000005 is an " +
+                     "access violation. See doc/WINDOWS.md.")
+            }
+          }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "photo-salon.exe still running after ${seconds}s"
+
       - name: Sign with Azure Trusted Signing
         uses: azure/trusted-signing-action@v0
         with:

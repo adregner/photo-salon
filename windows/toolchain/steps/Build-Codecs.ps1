@@ -83,9 +83,73 @@ $perCodec = @{
     'openjpeg'  = '-DBUILD_CODEC=OFF -DBUILD_TESTING=OFF'
 }
 
+# ── Source patches ──────────────────────────────────────────────────────────
+#
+# Applied to the checked-out tree before configure. Idempotent, and each one
+# throws if its anchor has gone, so bumping a codec version cannot silently drop
+# a patch that is still needed.
+function Invoke-CodecPatch {
+    param([Parameter(Mandatory)] [string] $Name,
+          [Parameter(Mandatory)] [string] $Dir)
+
+    if ($Name -ne 'libde265') { return }
+
+    # MSVC 14.51 miscompiles init_scan_orders() in scan.cc at /O2.
+    #
+    # The generated code loads the y-loop bound for the FIRST iteration out of
+    # the caller's home space before anything writes it -- in the shipped v0.5.1
+    # binary, `mov ecx,[rsp+78h]` at init_scan_orders+0x405, whose first write is
+    # 0x11 bytes later. Whatever the caller happened to leave there becomes the
+    # bound. When it is large, the loop walks y past the block size and calls
+    # fill_scan_pos() with a coordinate the scan tables can never produce; its
+    # unbounded `do {...} while (xC!=x || yC!=y)` search then runs lastSubBlock
+    # negative and reads off the front of the image. The result is an access
+    # violation during C++ static init -- libheif registers its decoder plugins
+    # from a static initializer, which calls de265_init() -- so the process dies
+    # before main() and the app never opens a window.
+    #
+    # That is the intermittent 0xC0000005 recorded in doc/WINDOWS.md. It is not
+    # intermittent in any interesting way: it just depends on leftover stack, so
+    # it tracks machine state and shifts whenever the binary's layout changes.
+    # v0.5.0 and v0.5.1 both crash 6/6 on a stock Windows Server 2025 box.
+    #
+    # Both functions run exactly once, at startup, so building them unoptimized
+    # costs nothing measurable. The pragma goes immediately before fill_scan_pos,
+    # which is the last thing in the file apart from init_scan_orders -- so the
+    # per-coefficient get_scan_order()/get_scan_position() above it keep /O2.
+    $scan = Join-Path $Dir 'libde265\scan.cc'
+    if (-not (Test-Path $scan)) { throw "libde265 patch: $scan not found." }
+
+    $text = [System.IO.File]::ReadAllText($scan)
+    if ($text.Contains('#pragma optimize("", off)')) {
+        Write-Host '  libde265 scan.cc: already patched'
+        return
+    }
+
+    $anchor = 'static void fill_scan_pos(scan_position* pos'
+    if (-not $text.Contains($anchor)) {
+        throw ("libde265 patch: anchor '$anchor' is no longer in scan.cc. Check " +
+               "whether MSVC still miscompiles init_scan_orders() before dropping " +
+               "this patch -- see the comment in steps\Build-Codecs.ps1.")
+    }
+
+    $pragma = @"
+// Patched by photo-salon (windows/toolchain/steps/Build-Codecs.ps1); see the
+// comment there. MSVC miscompiles the loop bound in init_scan_orders() at /O2,
+// which crashes the process during static initialisation. These two functions
+// run once at startup, so they are built unoptimized; everything above keeps /O2.
+#pragma optimize("", off)
+
+"@
+    $text = $text.Replace($anchor, $pragma + $anchor)
+    [System.IO.File]::WriteAllText($scan, $text, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host '  libde265 scan.cc: optimization disabled for fill_scan_pos/init_scan_orders'
+}
+
 foreach ($codec in $cfg.Codecs) {
     $src = Get-GitSource -Config $cfg -Codec $codec
     $commits[$codec.Name] = $src.Commit
+    Invoke-CodecPatch -Name $codec.Name -Dir $src.Dir
 
     $build = Join-Path $cfg.Build $codec.Name
     $flags = $perCodec[$codec.Name]

@@ -47,9 +47,10 @@ verify_standalone() {
         return 1
     fi
 
-    bad="$("$readobj" --coff-imports "$exe" \
-           | sed -n 's/^ *Name: //p' | sort -u \
-           | grep -Ei '^(msvcp[0-9]|msvcr[0-9]|vcruntime[0-9])' || true)"
+    local imports
+    imports="$("$readobj" --coff-imports "$exe" | sed -n 's/^ *Name: //p' | sort -u)"
+
+    bad="$(printf '%s\n' "$imports" | grep -Ei '^(msvcp[0-9]|msvcr[0-9]|vcruntime[0-9])' || true)"
     if [ -n "$bad" ]; then
         echo "error: $exe imports Visual C++ Redistributable DLLs:" >&2
         printf '  %s\n' $bad >&2
@@ -57,7 +58,58 @@ verify_standalone() {
         echo "       toolchain file and CrtLinkage in windows/toolchain/versions.psd1." >&2
         return 1
     fi
-    echo "Standalone check: no Visual C++ Redistributable imports (via $readobj)."
+
+    # The CRT is only the most familiar way to lose "standalone", not the only
+    # one: any DLL Windows does not ship is one more thing the user has to have.
+    # So the rule is an allowlist, not a blocklist — every DLL the .exe imports
+    # must be an OS component. Anything else has to be linked statically.
+    #
+    # icuuc/icuin are on the list deliberately. Qt's -no-icu drops QT_FEATURE_icu,
+    # but QT_FEATURE_winsdkicu stays on and qstringconverter.cpp calls the Windows
+    # SDK's ucnv_* through it. Those DLLs are in System32 on every supported
+    # build (verified on Windows Server 2025 / 10.0.26100, where icuuc.dll,
+    # icuin.dll and icu.dll are all present), so the import is fine — see
+    # doc/WINDOWS.md § Static CRT.
+    #
+    # A new Qt module or codec may legitimately pull in a system DLL that is not
+    # yet listed. Add it here only after confirming it is present on a stock
+    # Windows install, which is the check this is standing in for.
+    local system_dlls="
+        advapi32 authz bcrypt cfgmgr32 comctl32 comdlg32 crypt32 d2d1 d3d9
+        d3d11 d3d12 dbghelp dnsapi dwmapi dwrite dxgi dxva2 gdi32 gdiplus
+        glu32 icu icuin icuuc imm32 iphlpapi kernel32 mf mfplat mfreadwrite
+        mpr msimg32 ncrypt netapi32 normaliz ntdll ole32 oleaut32 opengl32
+        powrprof propsys rpcrt4 secur32 setupapi shcore shell32 shlwapi
+        urlmon user32 userenv usp10 uxtheme version winhttp wininet winmm
+        winspool.drv wintrust ws2_32 wtsapi32 uiautomationcore
+    "
+    local dll base unknown=""
+    while read -r dll; do
+        [ -z "$dll" ] && continue
+        base="$(printf '%s' "$dll" | tr 'A-Z' 'a-z')"
+        base="${base%.dll}"
+        # API-set contract stubs (api-ms-win-*, ext-ms-win-*) are resolved by the
+        # loader against OS components; they are always system.
+        case "$base" in
+            api-ms-win-*|ext-ms-win-*) continue ;;
+        esac
+        case " $(echo $system_dlls) " in
+            *" $base "*) continue ;;
+        esac
+        unknown="$unknown $dll"
+    done <<< "$imports"
+
+    if [ -n "$unknown" ]; then
+        echo "error: $exe imports DLLs that are not known Windows components:" >&2
+        printf '  %s\n' $unknown >&2
+        echo "       A standalone .exe must link everything but Windows' own DLLs" >&2
+        echo "       statically — a missing one is a loader error before main runs." >&2
+        echo "       If this really is a stock Windows DLL, add it to system_dlls in" >&2
+        echo "       $(basename "$0"); otherwise check what started linking it." >&2
+        return 1
+    fi
+
+    echo "Standalone check: $(printf '%s\n' "$imports" | grep -c .) imports, all Windows system DLLs (via $readobj)."
 }
 
 if [[ -n "${PHOTO_SALON_SKIP_STANDALONE_CHECK:-}" ]]; then
