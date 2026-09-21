@@ -199,6 +199,8 @@ MainWindow::MainWindow(const QString &imagePath, QWidget *parent)
 
         pane->viewer()->setHelpVisible(true);
         QTimer::singleShot(0, this, &MainWindow::openFile);
+    } else {
+        applyAutoPairIfNeeded(pane->path());
     }
 
     updateExternalEditorName();
@@ -337,6 +339,47 @@ void MainWindow::openComparison(const QString &path) {
     QTimer::singleShot(0, bv, [bv] { bv->fitToWindow(); });
 }
 
+void MainWindow::openImage(const QString &path) {
+    const QString partner = findPairPartner(path);
+
+    if (partner.isEmpty()) {
+        // Not a "_pair" file. Leaving an auto-paired compare for one collapses
+        // back to single mode; otherwise this matches the pre-existing
+        // behavior of replacing just the focused image in place (a manual
+        // Shift+O compare's other pane is left untouched).
+        if (m_autoPaired && compareMode())
+            closePane(1);
+        m_autoPaired = false;
+        focused()->viewer()->loadImage(path);
+        return;
+    }
+
+    // A pair was detected: collapse to a single pane and arrange the pair
+    // around it. In a manual compare, keep the pane being replaced (the
+    // focused one); an existing auto-pair has no "which one" to preserve.
+    if (compareMode())
+        closePane(m_autoPaired ? 1 : (1 - m_focus));
+    arrangePair(path, partner);
+}
+
+void MainWindow::applyAutoPairIfNeeded(const QString &path) {
+    m_autoPaired = false;
+    const QString partner = findPairPartner(path);
+    if (!partner.isEmpty())
+        arrangePair(path, partner);
+}
+
+void MainWindow::arrangePair(const QString &a, const QString &b) {
+    const QString left  = (a < b) ? a : b;
+    const QString right = (a < b) ? b : a;
+
+    ImagePane *only = m_panes.at(0);
+    if (only->path() != left)
+        only->viewer()->loadImage(left);
+    openComparison(right);
+    m_autoPaired = true;
+}
+
 void MainWindow::closePane(int index) {
     if (!compareMode() || index < 0 || index >= m_panes.size()) return;
 
@@ -347,6 +390,10 @@ void MainWindow::closePane(int index) {
     delete v;          // deletes the viewer and, as its child, the pane
 
     m_focus = 0;       // the lone survivor becomes the focused pane
+    // Single mode again: not an auto-paired compare (callers that immediately
+    // re-arrange a new pair after this — openImage(), navigateFocused() — set
+    // this back to true themselves).
+    m_autoPaired = false;
     updateTabBar();    // single image again → strip hides
     syncPanelsToFocused();
     refreshHistogram();
@@ -486,6 +533,16 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             return true;
         }
         return false;
+    }
+
+    // Left/Right: handled centrally (rather than left to ImageViewer's own
+    // self-contained folder navigation) so it can be auto-pair aware — stepping
+    // past an auto-paired pair as a unit and applying pair detection to whatever
+    // file navigation lands on next.
+    if ((ke->key() == Qt::Key_Left || ke->key() == Qt::Key_Right)
+        && viewer && !viewer->currentPath().isEmpty()) {
+        navigateFocused(ke->key() == Qt::Key_Right ? 1 : -1);
+        return true;
     }
 
     // Tab: the viewport event filter doesn't reliably fire before Qt's focus
@@ -693,7 +750,7 @@ void MainWindow::folderBrowseFocused() {
     auto openItem = [&](QListWidgetItem *item) {
         if (opened || !item) return;
         opened = true;
-        viewer->loadImage(dir.absoluteFilePath(item->text()));
+        openImage(dir.absoluteFilePath(item->text()));
         dialog.accept();
     };
     connect(list, &QListWidget::itemClicked,   &dialog, [&](QListWidgetItem *i) { openItem(i); });
@@ -701,6 +758,48 @@ void MainWindow::folderBrowseFocused() {
 
     list->setFocus();
     dialog.exec();
+}
+
+// ---------------------------------------------------------------------------
+// Arrow-key navigation & auto-pair ("_pair" file names)
+// ---------------------------------------------------------------------------
+QString MainWindow::adjacentImagePath(const QString &path, int delta) const {
+    if (path.isEmpty()) return {};
+    QFileInfo info(path);
+    QDir dir = info.absoluteDir();
+    QStringList exts = supportedExtensions();
+    exts.removeAll(QStringLiteral("*.svg"));
+    QStringList files = dir.entryList(exts, QDir::Files, QDir::Name);
+    int idx = files.indexOf(info.fileName());
+    if (idx < 0 || files.isEmpty()) return {};
+    int next = ((idx + delta) % files.size() + files.size()) % files.size();
+    return dir.absoluteFilePath(files.at(next));
+}
+
+void MainWindow::navigateFocused(int delta) {
+    if (m_autoPaired && compareMode()) {
+        // Step past the pair as a unit: from the left edge going back, or the
+        // right edge going forward, then re-enter single mode there (auto-pair
+        // detection runs again on whatever that file turns out to be).
+        const QString edge = (delta > 0) ? m_panes.at(1)->path() : m_panes.at(0)->path();
+        const QString target = adjacentImagePath(edge, delta);
+        if (!target.isEmpty())
+            openImage(target);
+        return;
+    }
+
+    if (compareMode()) {
+        // Manual (Shift+O) compare: step only the focused image in place.
+        ImagePane *pane = focused();
+        const QString target = adjacentImagePath(pane->path(), delta);
+        if (!target.isEmpty())
+            pane->viewer()->loadImage(target);
+        return;
+    }
+
+    const QString target = adjacentImagePath(focused()->path(), delta);
+    if (!target.isEmpty())
+        openImage(target);
 }
 
 // ---------------------------------------------------------------------------
@@ -950,7 +1049,7 @@ void MainWindow::openFile() {
         return;
     QString resolved = resolveImagePath(selected);
     if (!resolved.isEmpty())
-        viewer->loadImage(resolved);
+        openImage(resolved);
 }
 
 void MainWindow::updateExternalEditorName() {
