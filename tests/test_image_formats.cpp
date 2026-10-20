@@ -1,6 +1,7 @@
 #include <QtTest/QtTest>
 #include <QApplication>
 #include <QImage>
+#include <QImageReader>
 #include <QImageWriter>
 #include <QTemporaryDir>
 #include "ImageFormats.h"
@@ -8,6 +9,9 @@
 class ImageFormatsTest : public QObject {
     Q_OBJECT
 private slots:
+    void cleanup();
+    void allocationLimitGovernsDecoding();
+    void allocationLimitCoversFullResolutionFiles();
     void containsJpeg();
     void containsPng();
     void containsBmp();
@@ -16,6 +20,43 @@ private slots:
     void tiffRoundTrip();
     void saveFilterCoversWritableFormats();
 };
+
+// allocationLimitGovernsDecoding() deliberately squeezes the limit, and a failed
+// QVERIFY would leave it that way for everything after it. cleanup() runs after
+// every test function, including a failing one.
+void ImageFormatsTest::cleanup() {
+    raiseImageAllocationLimit();
+}
+
+// Qt's default 256 MB allocation limit refuses full-resolution camera files, and
+// does it quietly: the read just returns null. Rather than allocate 300-odd MB
+// here, squeeze the limit below a small image to show that it really is the
+// thing that decides, then show raiseImageAllocationLimit() lifts it.
+void ImageFormatsTest::allocationLimitGovernsDecoding() {
+    QImage src(600, 600, QImage::Format_RGB32);   // ~1.4 MB once decoded
+    src.fill(Qt::blue);
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("limit.png");
+    QVERIFY2(src.save(path, "PNG"), qPrintable(path));
+
+    QImageReader::setAllocationLimit(1);
+    QVERIFY2(QImage(path).isNull(), "a 1 MB limit should have blocked a 1.4 MB image");
+
+    raiseImageAllocationLimit();
+    QCOMPARE(QImageReader::allocationLimit(), kImageAllocationLimitMb);
+    QVERIFY2(!QImage(path).isNull(), "raiseImageAllocationLimit() did not lift the limit");
+}
+
+// The file that found this: a 7200x5400 16-bit TIFF from a Leica Q3. Qt expands
+// 16-bit RGB to RGBA64, so the decoded buffer is 8 bytes a pixel.
+void ImageFormatsTest::allocationLimitCoversFullResolutionFiles() {
+    const qint64 leicaQ3Mb = qint64(7200) * 5400 * 8 / (1024 * 1024);
+    QVERIFY2(kImageAllocationLimitMb > leicaQ3Mb,
+             qPrintable(QStringLiteral("limit is %1 MB, needs to exceed %2 MB")
+                            .arg(kImageAllocationLimitMb).arg(leicaQ3Mb)));
+}
 
 void ImageFormatsTest::containsJpeg() {
     QStringList exts = supportedExtensions();

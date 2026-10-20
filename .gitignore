@@ -7,11 +7,14 @@ _build/
 Thumbs.db
 CLAUDE.local.md
 
-# Pre-compiled and large imports from Windows
+# Pre-compiled imports from Windows. All fetched by fetch-windows-deps.sh from
+# the bundles pinned in windows-deps.lock — nothing under these paths is
+# committed. Regenerate them with windows/toolchain/Make-WindowsToolchain.ps1.
 windows/qt-6.11/
-windows/msvc/include/
-windows/sdk/include/
+windows/msvc/
+windows/sdk/
 windows/codecs/
+windows/.*.sha256
 
 qt-linux/
 

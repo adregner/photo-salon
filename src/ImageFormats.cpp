@@ -4,6 +4,24 @@
 #include <QImageReader>
 #include <QImageWriter>
 
+void raiseImageAllocationLimit() {
+    // Qt refuses to decode any image whose pixel buffer would exceed
+    // QImageReader::allocationLimit(), which defaults to 256 MB. That is well
+    // under what current cameras produce, and the failure is opaque: the read
+    // stops with "Unable to read image data" and the only hint is a
+    // qt.gui.imageio warning that is invisible unless logging is turned on.
+    //
+    // A 7200x5400 16-bit TIFF out of a Leica Q3 is the case that found this.
+    // Qt expands 16-bit RGB to RGBA64 — 8 bytes a pixel — so the buffer is
+    // 311 MB and the file would not open at all, on any platform.
+    //
+    // The limit is there to stop a malformed or hostile file from exhausting
+    // memory, so raise it rather than removing it (0 disables it entirely).
+    // 2 GB covers a 150-megapixel frame at 16 bits per channel, which is past
+    // the largest medium-format backs currently sold.
+    QImageReader::setAllocationLimit(kImageAllocationLimitMb);
+}
+
 QStringList supportedExtensions() {
     QStringList filters;
     for (const QByteArray &fmt : QImageReader::supportedImageFormats())

@@ -65,7 +65,7 @@ Replace `6.x.x` with the Qt version you installed (e.g. `6.8.0`).
 
 ### Windows (cross-compile from macOS)
 
-Cross-compiles a self-contained static `.exe` using `clang-cl` targeting the MSVC ABI. See [`doc/WINDOWS.md`](doc/WINDOWS.md) for prerequisites and setup.
+Cross-compiles a self-contained static `.exe` using `clang-cl` targeting the MSVC ABI. The C runtime is linked in statically, so the released binary runs on a stock Windows 10/11 machine with no Visual C++ Redistributable and nothing alongside it. See [`doc/WINDOWS.md`](doc/WINDOWS.md) for prerequisites and setup.
 
 ```bash
 ./build-windows.sh
@@ -124,6 +124,9 @@ photo-salon <image.jpg>
 Opens the specified image in a resizable window, scaled to fit. JPEG, PNG, TIFF, WebP
 and the other formats Qt reads are supported, plus **HEIC/HEIF** (iPhone photos) and the
 **JPEG 2000** family — `.jpf`, `.jpx`, `.jp2`, `.j2k`.
+
+Full-resolution camera files are fine, including 16-bit-per-channel TIFFs: a single image
+may decode to up to 2 GB, which covers a 150-megapixel frame at 16 bits per channel.
 
 Edits are **non-destructive and remembered per image**: rotation, flips, crop, light/level
 and colour adjustments, and the black-&-white look are tracked in an internal change manifest
